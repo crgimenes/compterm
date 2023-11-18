@@ -27,6 +27,7 @@ var (
 	o           = out{}
 	connections []*websocket.Conn
 	connMutex   sync.Mutex
+	writeWSChan = make(chan []byte, 1024)
 )
 
 // appendToOutFile append bytes to out.txt file
@@ -42,19 +43,23 @@ func appendToOutFile(p []byte) {
 	}
 }
 
-var writeWSChan = make(chan []byte, 1024)
-
 func writeWSLoop() {
 	for {
 		select {
 		case msg := <-writeWSChan:
-			for _, c := range connections {
-				err := c.Write(context.Background(), websocket.MessageText, msg)
-				if err != nil {
-					log.Println(err)
-					removeConnection(c) // TODO: is this safe?
-				}
+			writeAllWS(msg)
+		}
+	}
+}
+
+func writeAllWS(msg []byte) {
+	for _, c := range connections {
+		err := c.Write(context.Background(), websocket.MessageText, msg)
+		if err != nil {
+			if websocket.CloseStatus(err) != websocket.StatusNormalClosure {
+				log.Printf("error writing to websocket: %s, %v\r\n", err, websocket.CloseStatus(err)) // TODO: send to file, not the screen
 			}
+			removeConnection(c) // TODO: is this safe?
 		}
 	}
 }
@@ -65,6 +70,9 @@ func (o out) Write(p []byte) (n int, err error) {
 	//appendToOutFile(p)
 
 	n, err = os.Stdout.Write(p)
+
+	// write to websocket
+	writeWSChan <- p
 
 	return
 }
@@ -80,14 +88,27 @@ func runCmd() {
 	// Make sure to close the pty at the end.
 	defer func() { _ = ptmx.Close() }() // Best effort.
 
-	// Handle pty size.
+	// Handle signals
 	ch := make(chan os.Signal, 1)
-	signal.Notify(ch, syscall.SIGWINCH)
+	signal.Notify(ch, syscall.SIGWINCH, syscall.SIGTERM, os.Interrupt)
 	go func() {
-		for range ch {
-			err := pty.InheritSize(os.Stdin, ptmx)
-			if err != nil {
-				log.Printf("error resizing pty: %s\r\n", err)
+		for caux := range ch {
+			switch caux {
+			case syscall.SIGWINCH:
+				// Update window size.
+				_ = pty.InheritSize(os.Stdin, ptmx)
+
+				// Send clear scape sequence to the pty them send the size of the terminal to the websocket.
+				clear := "\033[H\033[2J\033[3J\033[;H\033[0m"
+				sizeWidth, sizeHeight, err := term.GetSize(int(os.Stdin.Fd()))
+				if err != nil {
+					log.Fatalf("error getting size: %s\r\n", err)
+				}
+				writeWSChan <- []byte(clear)
+				writeWSChan <- []byte(fmt.Sprintf("\033[8;%d;%dt", sizeHeight, sizeWidth))
+			case syscall.SIGTERM, os.Interrupt:
+				removeAllConnections()
+				os.Exit(0)
 			}
 		}
 	}()
@@ -96,14 +117,45 @@ func runCmd() {
 	// Set stdin in raw mode.
 	oldState, err := term.MakeRaw(int(os.Stdin.Fd()))
 	if err != nil {
-		panic(err)
+		log.Fatalf("error making raw: %s\r\n", err)
 	}
-	defer func() { _ = term.Restore(int(os.Stdin.Fd()), oldState) }() // Best effort.
+	restoreTerm := func() {
+		_ = term.Restore(int(os.Stdin.Fd()), oldState)
+	}
+	defer restoreTerm()
 
 	// Copy stdin to the pty and the pty to stdout.
 	go func() { _, _ = io.Copy(ptmx, os.Stdin) }()
 	_, _ = io.Copy(o, ptmx)
 
+	// Close the stdin pipe.
+	_ = ptmx.Close()
+
+	// Wait for the command to finish.
+	err = c.Wait()
+	if err != nil {
+		log.Fatalf("error waiting for command: %s\r\n", err)
+	}
+
+	// Close the websocket connections
+	removeAllConnections()
+
+	restoreTerm()
+
+	os.Exit(0)
+}
+
+func removeAllConnections() {
+	connMutex.Lock()
+	defer connMutex.Unlock()
+
+	for _, conn := range connections {
+		err := conn.Close(websocket.StatusNormalClosure, "server shutdown")
+		if err != nil {
+			log.Printf("error closing websocket: %s\r\n", err)
+		}
+	}
+	connections = []*websocket.Conn{}
 }
 
 func removeConnection(c *websocket.Conn) {
@@ -132,31 +184,11 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 	connMutex.Lock()
 	connections = append(connections, c)
 	connMutex.Unlock()
-
-	defer func() {
-		c.Close(websocket.StatusInternalError, "the sky is falling")
-		removeConnection(c)
-	}()
-
-	for {
-		ctx, cancel := context.WithTimeout(r.Context(), readTimeout)
-		_, msg, err := c.Read(ctx)
-		cancel()
-		if err != nil {
-			log.Println(err)
-			c.Close(websocket.StatusNormalClosure, "")
-			return
-		}
-
-		err = c.Write(r.Context(), websocket.MessageText, msg)
-		if err != nil {
-			log.Println(err)
-			return
-		}
-	}
 }
 
 func main() {
+	log.SetFlags(log.LstdFlags | log.Lshortfile)
+
 	go runCmd()
 	go writeWSLoop()
 
