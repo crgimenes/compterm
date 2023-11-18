@@ -42,6 +42,23 @@ func appendToOutFile(p []byte) {
 	}
 }
 
+var writeWSChan = make(chan []byte, 1024)
+
+func writeWSLoop() {
+	for {
+		select {
+		case msg := <-writeWSChan:
+			for _, c := range connections {
+				err := c.Write(context.Background(), websocket.MessageText, msg)
+				if err != nil {
+					log.Println(err)
+					removeConnection(c) // TODO: is this safe?
+				}
+			}
+		}
+	}
+}
+
 func (o out) Write(p []byte) (n int, err error) {
 
 	// append to out.txt file
@@ -141,6 +158,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 
 func main() {
 	go runCmd()
+	go writeWSLoop()
 
 	mux := http.NewServeMux()
 
