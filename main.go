@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"log"
@@ -8,15 +9,25 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
 	"github.com/kr/pty"
 	"golang.org/x/term"
+	"nhooyr.io/websocket"
 )
+
+const readTimeout = 10 * time.Second
 
 type out struct {
 }
+
+var (
+	o           = out{}
+	connections []*websocket.Conn
+	connMutex   sync.Mutex
+)
 
 // appendToOutFile append bytes to out.txt file
 func appendToOutFile(p []byte) {
@@ -40,8 +51,6 @@ func (o out) Write(p []byte) (n int, err error) {
 
 	return
 }
-
-var o = out{}
 
 func runCmd() {
 	c := exec.Command(os.Args[1], os.Args[2:]...)
@@ -80,12 +89,63 @@ func runCmd() {
 
 }
 
+func removeConnection(c *websocket.Conn) {
+	connMutex.Lock()
+	defer connMutex.Unlock()
+
+	for i, conn := range connections {
+		if conn == c {
+			connections = append(connections[:i], connections[i+1:]...)
+			break
+		}
+	}
+}
+
+func homeHandler(w http.ResponseWriter, r *http.Request) {
+	fmt.Fprintf(w, "Hello, %q", r.URL.Path)
+}
+
+func wsHandler(w http.ResponseWriter, r *http.Request) {
+	c, err := websocket.Accept(w, r, nil)
+	if err != nil {
+		log.Println(err)
+		return
+	}
+
+	connMutex.Lock()
+	connections = append(connections, c)
+	connMutex.Unlock()
+
+	defer func() {
+		c.Close(websocket.StatusInternalError, "the sky is falling")
+		removeConnection(c)
+	}()
+
+	for {
+		ctx, cancel := context.WithTimeout(r.Context(), readTimeout)
+		_, msg, err := c.Read(ctx)
+		cancel()
+		if err != nil {
+			log.Println(err)
+			c.Close(websocket.StatusNormalClosure, "")
+			return
+		}
+
+		err = c.Write(r.Context(), websocket.MessageText, msg)
+		if err != nil {
+			log.Println(err)
+			return
+		}
+	}
+}
+
 func main() {
 	go runCmd()
 
 	mux := http.NewServeMux()
 
-	//mux.HandleFunc("/", homeHandler)
+	mux.HandleFunc("/ws", wsHandler)
+	mux.HandleFunc("/", homeHandler)
 
 	s := &http.Server{
 		Handler:        mux,
