@@ -18,13 +18,11 @@ import (
 	"nhooyr.io/websocket"
 )
 
-const readTimeout = 10 * time.Second
-
-type out struct {
+type termIO struct {
 }
 
 var (
-	o           = out{}
+	termio      = termIO{}
 	connections []*websocket.Conn
 	connMutex   sync.Mutex
 	writeWSChan = make(chan []byte, 1024)
@@ -64,7 +62,7 @@ func writeAllWS(msg []byte) {
 	}
 }
 
-func (o out) Write(p []byte) (n int, err error) {
+func (o termIO) Write(p []byte) (n int, err error) {
 
 	// append to out.txt file
 	//appendToOutFile(p)
@@ -126,7 +124,7 @@ func runCmd() {
 
 	// Copy stdin to the pty and the pty to stdout.
 	go func() { _, _ = io.Copy(ptmx, os.Stdin) }()
-	_, _ = io.Copy(o, ptmx)
+	_, _ = io.Copy(termio, ptmx)
 
 	// Close the stdin pipe.
 	_ = ptmx.Close()
