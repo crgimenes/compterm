@@ -6,7 +6,6 @@ import (
 	"log"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 
 	"golang.org/x/term"
@@ -39,18 +38,19 @@ func main() {
 			case syscall.SIGWINCH:
 				// Send clear scape sequence to the pty them send the size of the terminal to the websocket.
 				clear := "\033[H\033[2J\033[3J\033[;H\033[0m"
-				sizeWidth, sizeHeight, err := term.GetSize(int(os.Stdin.Fd()))
+				//sizeWidth, sizeHeight, err := term.GetSize(int(os.Stdin.Fd()))
 				if err != nil {
 					log.Fatalf("error getting size: %s\r\n", err)
 				}
 
 				os.Stdout.Write([]byte(clear))
 
-				os.Stdout.Write([]byte("\033[34;40m"))
-				termBuffer := strings.Repeat("•", sizeWidth*sizeHeight)
-				os.Stdout.Write([]byte(termBuffer))
-				os.Stdout.Write([]byte("\033[0m\033[H"))
-
+				/*
+					os.Stdout.Write([]byte("\033[34;40m"))
+					termBuffer := strings.Repeat("•", sizeWidth*sizeHeight)
+					os.Stdout.Write([]byte(termBuffer))
+					os.Stdout.Write([]byte("\033[0m\033[H"))
+				*/
 			case syscall.SIGTERM, os.Interrupt:
 				c.Close(websocket.StatusNormalClosure, "")
 				restoreTerm()
