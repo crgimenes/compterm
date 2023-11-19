@@ -65,7 +65,7 @@ func writeAllWS(msg []byte) {
 func (o termIO) Write(p []byte) (n int, err error) {
 
 	// append to out.txt file
-	//appendToOutFile(p)
+	appendToOutFile(p)
 
 	n, err = os.Stdout.Write(p)
 
