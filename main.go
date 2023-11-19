@@ -65,7 +65,7 @@ func writeAllWS(msg []byte) {
 func (o termIO) Write(p []byte) (n int, err error) {
 
 	// append to out.txt file
-	appendToOutFile(p)
+	// appendToOutFile(p)
 
 	n, err = os.Stdout.Write(p)
 
@@ -169,7 +169,12 @@ func removeConnection(c *websocket.Conn) {
 }
 
 func homeHandler(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintf(w, "Hello, %q", r.URL.Path)
+	b, err := os.ReadFile("assets/index.html")
+	if err != nil {
+		log.Printf("error reading index.html: %s\r\n", err)
+		return
+	}
+	fmt.Fprintf(w, string(b))
 }
 
 func wsHandler(w http.ResponseWriter, r *http.Request) {
