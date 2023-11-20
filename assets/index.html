@@ -4,51 +4,100 @@
     <title>compterm</title>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <link href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.min.css" rel="stylesheet">
-    <link href="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.min.js">
-    <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.min.js"></script>
     <style>
         html, body, #terminal {
             background: black;
+            color: white;
             height: 100%;
             width: 100%;
             padding: 0%;
             margin: 0%;
         }
+        #terminalCanvas {
+            border: 1px solid black;
+        }
     </style>
 </head>
 <body>
-    <div id="terminal"></div>
+    <canvas id="terminalCanvas" width="1600" height="550"></canvas>
     <script>
-        var term = new Terminal();
-        var fitAddon = new FitAddon();
-        term.loadAddon(fitAddon);
-        //var fitAddon = new FitAddon();
+        const maxWidthChars = 80;
+        const maxHeightChars = 25;
+        // objeto cursor
+        const cursor = {
+            line: 0,
+            column: 0,
+            fontColor: 'lime',
+            backgroundColor: 'navy'
+        };
 
-        //term.loadAddon(fitAddon);
-        //fitAddon.fit();
+        const canvas = document.getElementById('terminalCanvas');
+        const ctx = canvas.getContext('2d');
 
-        //term.fit();
+        ctx.font = '20px monospace';
+        ctx.textBaseline = 'top';
+ 
+        const charWidth = ctx.measureText('a').width;
+        const charHeight = 22; // O tamanho da fonte pode ser usado como a altura do caractere
+         
+        ctx.fillStyle = 'black';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-        term.open(document.getElementById('terminal'));
-        fitAddon.fit();
+        function drawDebugRect(x, y, width, height, color) {
+            ctx.border = '1px solid white';
+            ctx.fillStyle = color;
+            ctx.fillRect(x, y, width, height);
+        }
 
-        window.addEventListener('resize', function() {
-            fitAddon.fit();
-            //term.fit();
-        });
+        function drawText(text, x, y, fontColor, backgroundColor) {
+            const textWidth = text.length * charWidth;
+            const textHeight = charHeight;
 
-        //term.OnResize = function() {
-            //fitAddon.fit();
-            //term.fit();
-        //};
 
+            ctx.fillStyle = backgroundColor;
+            ctx.fillRect(x, y, textWidth, textHeight);
+
+
+            ctx.fillStyle = fontColor;
+            ctx.fillText(text, x, y);
+        }
+
+        // print é igual a drawText, usa linhas e colunas ao invés de coordenadas
+        function print(text, line, column, fontColor, backgroundColor) {
+            drawText(text, column * charWidth, line * charHeight, fontColor, backgroundColor);
+            cursor.line = line;
+            cursor.column = column + text.length;
+            if (cursor.column >= canvas.width / charWidth) {
+                cursor.column = 0;
+                cursor.line++;
+            }
+            if (cursor.line >= canvas.height / charHeight) {
+                // rolar a tela
+                ctx.drawImage(canvas, 0, -charHeight);
+                ctx.fillStyle = 'black';
+                ctx.fillRect(0, canvas.height - charHeight, canvas.width, charHeight);
+                cursor.line--;
+            }
+        }
+
+        // Exemplo de uso
+        //drawText('Olá, Terminal!', 50, 50, 'lime', 'navy');
+        //drawText('Texto com outra cor', 50, 100, 'yellow', 'purple');
+        //drawDebugRect(2, 2, 1920-2, 1080-2, 'black');
+        /////////////////////////////////////////////////////////////
 
         const ws = new WebSocket('ws://127.0.0.1:8080/ws');
 
+        x=0;
         ws.onmessage = function(event) {
-            term.write(event.data);
+            x++;
+            //term.write(event.data);
+            //console.log(event.data);
+            print(x+ event.data, cursor.line, cursor.column, cursor.fontColor, cursor.backgroundColor);
         };
+
+
+
     </script>
 </body>
 </html>
