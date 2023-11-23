@@ -6,7 +6,7 @@
     <style>
         #terminal {
             width: 100%;
-            height: 100vh;
+            height: 100%;
         }
     </style>
 </head>
@@ -17,18 +17,26 @@
     <script src="https://unpkg.com/xterm-addon-fit/lib/xterm-addon-fit.js"></script>
     <script src="https://unpkg.com/xterm-addon-attach/lib/xterm-addon-attach.js"></script>
     <script>
-        document.addEventListener('DOMContentLoaded', (event) => {
-            const terminal = new Terminal();
-            terminal.open(document.getElementById('terminal'));
+        const terminal = new Terminal();
+        terminal.open(document.getElementById('terminal'));
 
-            const fitAddon = new FitAddon.FitAddon();
-            const ws = new WebSocket('ws://localhost:8080/ws');
-            const attachAddon = new AttachAddon.AttachAddon(ws);
-
-            terminal.loadAddon(fitAddon);
-            terminal.loadAddon(attachAddon);
+        const fitAddon = new FitAddon.FitAddon();
+        const ws = new WebSocket('ws://localhost:8080/ws');
+        const attachAddon = new AttachAddon.AttachAddon(ws);
+            
+        terminal.loadAddon(fitAddon);
+        terminal.loadAddon(attachAddon);
+        fitAddon.fit();
+ 
+        const cols = 1024; // TODO: calculate font size and use that to calculate cols and rows 80x24
+        const rows = 768;
+        terminal.resize(cols, rows);
+        
+        window.addEventListener('resize', () => {
             fitAddon.fit();
-    });
+            terminal.resize(cols, rows);
+        });
+        
     </script>
 </body>
 </html>
