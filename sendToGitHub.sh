@@ -19,7 +19,7 @@ echo "criando repositório git..."
 git init
 
 echo "clonando repositório fossil..."
-fossil export --git ../$REPO_NAME.fossil | git fast-import
+fossil export --git ../../Fossilized/$REPO_NAME.fossil | git fast-import
 
 git checkout trunk
 

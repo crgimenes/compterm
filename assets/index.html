@@ -22,7 +22,8 @@
             terminal.open(document.getElementById('terminal'));
 
             const fitAddon = new FitAddon.FitAddon();
-            const attachAddon = new AttachAddon.AttachAddon({ url: 'ws://127.0.0.1:8080/ws' });
+            const ws = new WebSocket('ws://localhost:8080/ws');
+            const attachAddon = new AttachAddon.AttachAddon(ws);
 
             terminal.loadAddon(fitAddon);
             terminal.loadAddon(attachAddon);
