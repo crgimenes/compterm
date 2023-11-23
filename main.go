@@ -165,15 +165,6 @@ func removeConnection(c *websocket.Conn) {
 	}
 }
 
-func homeHandler(w http.ResponseWriter, r *http.Request) {
-	b, err := os.ReadFile("assets/index.html")
-	if err != nil {
-		log.Printf("error reading index.html: %s\r\n", err)
-		return
-	}
-	fmt.Fprintf(w, string(b))
-}
-
 func wsHandler(w http.ResponseWriter, r *http.Request) {
 	c, err := websocket.Accept(w, r, nil)
 	if err != nil {
@@ -195,7 +186,7 @@ func main() {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/ws", wsHandler)
-	mux.HandleFunc("/", homeHandler)
+	mux.Handle("/", http.FileServer(http.Dir("assets")))
 
 	s := &http.Server{
 		Handler:        mux,
