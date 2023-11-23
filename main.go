@@ -96,13 +96,10 @@ func runCmd() {
 				// Update window size.
 				_ = pty.InheritSize(os.Stdin, ptmx)
 
-				// Send clear scape sequence to the pty them send the size of the terminal to the websocket.
-				clear := "\033[H\033[2J\033[3J\033[;H\033[0m"
 				sizeWidth, sizeHeight, err := term.GetSize(int(os.Stdin.Fd()))
 				if err != nil {
 					log.Fatalf("error getting size: %s\r\n", err)
 				}
-				writeWSChan <- []byte(clear)
 				writeWSChan <- []byte(fmt.Sprintf("\033[8;%d;%dt", sizeHeight, sizeWidth))
 			case syscall.SIGTERM, os.Interrupt:
 				removeAllConnections()
