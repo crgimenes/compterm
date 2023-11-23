@@ -2,13 +2,7 @@
 <html>
 <head>
     <title>Xterm.js Example</title>
-    <link rel="stylesheet" href="https://unpkg.com/xterm/css/xterm.css" />
-    <style>
-        #terminal {
-            width: 100%;
-            height: 100%;
-        }
-    </style>
+    <link rel="stylesheet" href="term.css">
 </head>
 <body>
     <div id="terminal"></div>
@@ -18,8 +12,8 @@
     <script src="https://unpkg.com/xterm-addon-attach/lib/xterm-addon-attach.js"></script>
     <script>
         const termOptions = {
-            fontSize: 13, // TODO: use IBM 3270 font
-                fontFamily: 'Menlo For Powerline,Consolas,Liberation Mono,Menlo,Courier,monospace',
+            fontSize: 13,
+                fontFamily: 'terminal,monospace',
                 macOptionClickForcesSelection: true,
                 macOptionIsMeta: true,
             theme: {
