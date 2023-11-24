@@ -53,8 +53,12 @@ func writeWSLoop() {
 }
 
 func writeAllWS(msg []byte) {
+
+	// convert to base64
+	payload := base64.StdEncoding.EncodeToString(msg)
+
 	for _, c := range connections {
-		err := c.Write(context.Background(), websocket.MessageText, msg)
+		err := c.Write(context.Background(), websocket.MessageText, []byte(payload))
 		if err != nil {
 			if websocket.CloseStatus(err) != websocket.StatusNormalClosure {
 				log.Printf("error writing to websocket: %s, %v\r\n", err, websocket.CloseStatus(err)) // TODO: send to file, not the screen
@@ -71,11 +75,8 @@ func (o termIO) Write(p []byte) (n int, err error) {
 
 	n, err = os.Stdout.Write(p)
 
-	// convert to base64
-	b64Payload := base64.StdEncoding.EncodeToString(p)
-
 	// write to websocket
-	writeWSChan <- []byte(b64Payload)
+	writeWSChan <- p
 
 	return
 }
