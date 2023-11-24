@@ -19,15 +19,13 @@ import (
 	"nhooyr.io/websocket"
 )
 
-type termIO struct {
-}
+type termIO struct{}
 
 var (
 	termio      = termIO{}
 	connections []*websocket.Conn
 	connMutex   sync.Mutex
 	writeWSChan = make(chan []byte, 8192)
-	ptmx        *os.File
 )
 
 // appendToOutFile append bytes to out.txt file
@@ -53,7 +51,6 @@ func writeWSLoop() {
 }
 
 func writeAllWS(msg []byte) {
-
 	// convert to base64
 	payload := base64.StdEncoding.EncodeToString(msg)
 
@@ -83,9 +80,8 @@ func (o termIO) Write(p []byte) (n int, err error) {
 
 func runCmd() {
 	c := exec.Command(os.Args[1], os.Args[2:]...)
-	var err error
 	// Start the command with a pty.
-	ptmx, err = pty.Start(c)
+	ptmx, err := pty.Start(c)
 	if err != nil {
 		log.Fatalf("error starting pty: %s\r\n", err)
 	}
@@ -140,9 +136,7 @@ func runCmd() {
 
 	// Close the websocket connections
 	removeAllConnections()
-
 	restoreTerm()
-
 	os.Exit(0)
 }
 
@@ -166,6 +160,7 @@ func removeConnection(c *websocket.Conn) {
 	for i, conn := range connections {
 		if conn == c {
 			connections = append(connections[:i], connections[i+1:]...)
+
 			break
 		}
 	}
@@ -177,6 +172,7 @@ func readMessages(c *websocket.Conn) {
 		if err != nil {
 			log.Printf("error reading from websocket: %s\r\n", err)
 			removeConnection(c)
+
 			return
 		}
 
@@ -192,6 +188,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 	c, err := websocket.Accept(w, r, nil)
 	if err != nil {
 		log.Println(err)
+
 		return
 	}
 
