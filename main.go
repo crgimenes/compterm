@@ -27,6 +27,7 @@ var (
 	connections []*websocket.Conn
 	connMutex   sync.Mutex
 	writeWSChan = make(chan []byte, 8192)
+	ptmx        *os.File
 )
 
 // appendToOutFile append bytes to out.txt file
@@ -82,9 +83,9 @@ func (o termIO) Write(p []byte) (n int, err error) {
 
 func runCmd() {
 	c := exec.Command(os.Args[1], os.Args[2:]...)
-
+	var err error
 	// Start the command with a pty.
-	ptmx, err := pty.Start(c)
+	ptmx, err = pty.Start(c)
 	if err != nil {
 		log.Fatalf("error starting pty: %s\r\n", err)
 	}
@@ -170,6 +171,23 @@ func removeConnection(c *websocket.Conn) {
 	}
 }
 
+func readMessages(c *websocket.Conn) {
+	for {
+		_, msg, err := c.Read(context.Background())
+		if err != nil {
+			log.Printf("error reading from websocket: %s\r\n", err)
+			removeConnection(c)
+			return
+		}
+
+		processInput(c, msg)
+	}
+}
+
+func processInput(c *websocket.Conn, b []byte) {
+	log.Printf("received: %q\r\n", b)
+}
+
 func wsHandler(w http.ResponseWriter, r *http.Request) {
 	c, err := websocket.Accept(w, r, nil)
 	if err != nil {
@@ -180,6 +198,8 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 	connMutex.Lock()
 	connections = append(connections, c)
 	connMutex.Unlock()
+
+	//go readMessages(c)
 }
 
 func main() {

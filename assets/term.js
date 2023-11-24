@@ -60,6 +60,11 @@ function connectWS() {
         ws.close();
     };
 
+    terminal.onKey(e => {
+        ws.send(e.key);
+    });
+
+
     ws.onclose = () => {
         terminal.clear();
         terminal.reset();
