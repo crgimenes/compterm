@@ -2,17 +2,25 @@
 
 @font-face {
     font-family: terminal;
-    src: url(3270NerdFontMono-Regular.ttf);
+    src: url(FiraMonoNerdFontMono-Regular.otf);
 }
 
 html,
 body {
+    height: 100vh;
     margin: 0;
-    min-height: 100vh;
-    overflow: none;
+    overflow: hidden;
 }
 
 #terminal {
-    height: 100%;
-    width: 100%;
+    margin: auto;
+    width: fit-content;
+}
+
+#terminal .xterm-viewport {
+    overflow: hidden;
+}
+
+#terminal .xterm-screen {
+    background-color: black;
 }
