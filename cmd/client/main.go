@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"io"
 	"log"
 	"os"
@@ -31,26 +32,10 @@ func main() {
 	defer restoreTerm()
 
 	ch := make(chan os.Signal, 1)
-	signal.Notify(ch, syscall.SIGWINCH, syscall.SIGTERM, os.Interrupt)
+	signal.Notify(ch, syscall.SIGTERM, os.Interrupt)
 	go func() {
 		for caux := range ch {
 			switch caux {
-			case syscall.SIGWINCH:
-				// Send clear scape sequence to the pty them send the size of the terminal to the websocket.
-				clear := "\033[H\033[2J\033[3J\033[;H\033[0m"
-				//sizeWidth, sizeHeight, err := term.GetSize(int(os.Stdin.Fd()))
-				if err != nil {
-					log.Fatalf("error getting size: %s\r\n", err)
-				}
-
-				os.Stdout.Write([]byte(clear))
-
-				/*
-					os.Stdout.Write([]byte("\033[34;40m"))
-					termBuffer := strings.Repeat("•", sizeWidth*sizeHeight)
-					os.Stdout.Write([]byte(termBuffer))
-					os.Stdout.Write([]byte("\033[0m\033[H"))
-				*/
 			case syscall.SIGTERM, os.Interrupt:
 				c.Close(websocket.StatusNormalClosure, "")
 				restoreTerm()
@@ -58,7 +43,6 @@ func main() {
 			}
 		}
 	}()
-	ch <- syscall.SIGWINCH
 
 	for {
 		_, data, err := c.Read(context.Background())
@@ -74,7 +58,14 @@ func main() {
 			log.Printf("Read error: %v\n", err)
 			break
 		}
-		os.Stdout.Write(data)
+
+		b, err := base64.StdEncoding.DecodeString(string(data))
+		if err != nil {
+			log.Println(err)
+
+			return
+		}
+		os.Stdout.Write(b)
 	}
 
 	c.Close(websocket.StatusNormalClosure, "")
