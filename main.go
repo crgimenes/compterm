@@ -23,11 +23,10 @@ type termIO struct {
 }
 
 var (
-	termio        = termIO{}
-	connections   []*websocket.Conn
-	connMutex     sync.Mutex
-	writeWSChan   = make(chan []byte, 1024)
-	newConnBuffer = make([]byte, 0, 4096)
+	termio      = termIO{}
+	connections []*websocket.Conn
+	connMutex   sync.Mutex
+	writeWSChan = make(chan []byte, 8192)
 )
 
 // appendToOutFile append bytes to out.txt file
