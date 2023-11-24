@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"log"
@@ -22,10 +23,11 @@ type termIO struct {
 }
 
 var (
-	termio      = termIO{}
-	connections []*websocket.Conn
-	connMutex   sync.Mutex
-	writeWSChan = make(chan []byte, 1024)
+	termio        = termIO{}
+	connections   []*websocket.Conn
+	connMutex     sync.Mutex
+	writeWSChan   = make(chan []byte, 1024)
+	newConnBuffer = make([]byte, 0, 4096)
 )
 
 // appendToOutFile append bytes to out.txt file
@@ -69,8 +71,11 @@ func (o termIO) Write(p []byte) (n int, err error) {
 
 	n, err = os.Stdout.Write(p)
 
+	// convert to base64
+	b64Payload := base64.StdEncoding.EncodeToString(p)
+
 	// write to websocket
-	writeWSChan <- p
+	writeWSChan <- []byte(b64Payload)
 
 	return
 }
