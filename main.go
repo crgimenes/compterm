@@ -66,11 +66,14 @@ func writeAllWS(msg []byte) {
 }
 
 func (o termIO) Write(p []byte) (n int, err error) {
-
 	// append to out.txt file
 	// appendToOutFile(p)
 
+	// write to stdout
 	n, err = os.Stdout.Write(p)
+	if err != nil {
+		return
+	}
 
 	// write to websocket
 	writeWSChan <- p
@@ -85,8 +88,18 @@ func runCmd() {
 	if err != nil {
 		log.Fatalf("error starting pty: %s\r\n", err)
 	}
-	// Make sure to close the pty at the end.
-	defer func() { _ = ptmx.Close() }() // Best effort.
+
+	// Set stdin in raw mode.
+	oldState, err := term.MakeRaw(int(os.Stdin.Fd()))
+	if err != nil {
+		log.Fatalf("error setting stdin in raw mode: %s\r\n", err)
+	}
+
+	restoreTerm := func() {
+		_ = ptmx.Close()
+		_ = term.Restore(int(os.Stdin.Fd()), oldState)
+	}
+	defer restoreTerm()
 
 	// Handle signals
 	ch := make(chan os.Signal, 1)
@@ -105,28 +118,16 @@ func runCmd() {
 				writeWSChan <- []byte(fmt.Sprintf("\033[8;%d;%dt", sizeHeight, sizeWidth))
 			case syscall.SIGTERM, os.Interrupt:
 				removeAllConnections()
+				restoreTerm()
 				os.Exit(0)
 			}
 		}
 	}()
 	ch <- syscall.SIGWINCH // Initial resize.
 
-	// Set stdin in raw mode.
-	oldState, err := term.MakeRaw(int(os.Stdin.Fd()))
-	if err != nil {
-		log.Fatalf("error making raw: %s\r\n", err)
-	}
-	restoreTerm := func() {
-		_ = term.Restore(int(os.Stdin.Fd()), oldState)
-	}
-	defer restoreTerm()
-
 	// Copy stdin to the pty and the pty to stdout.
 	go func() { _, _ = io.Copy(ptmx, os.Stdin) }()
 	_, _ = io.Copy(termio, ptmx)
-
-	// Close the stdin pipe.
-	_ = ptmx.Close()
 
 	// Wait for the command to finish.
 	err = c.Wait()

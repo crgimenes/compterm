@@ -78,7 +78,7 @@ function connectWS() {
 connectWS();
 
 const fitAddon = new FitAddon.FitAddon();
-terminal.resize(80, 25);
+terminal.resize(80, 24);
 fitAddon.fit();
 
 // TODO: add zmodem addon support. Old school but cool. :D
