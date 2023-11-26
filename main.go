@@ -47,7 +47,7 @@ var contadorDePacotes = 1
 
 func writeAllWS() {
 
-	msg := make([]byte, 1024)
+	msg := make([]byte, 8192)
 	for {
 		n, err := bs.Read(msg)
 		if err != nil {
