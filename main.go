@@ -2,7 +2,7 @@ package main
 
 import (
 	"compterm/byteStream"
-	"context"
+	"compterm/client"
 	"fmt"
 	"io"
 	"log"
@@ -23,10 +23,10 @@ import (
 type termIO struct{}
 
 var (
-	termio      = termIO{}
-	connections []*websocket.Conn
-	connMutex   sync.Mutex
-	bs          = byteStream.NewByteStream()
+	termio    = termIO{}
+	clients   []*client.Client
+	connMutex sync.Mutex
+	bs        = byteStream.NewByteStream()
 )
 
 // appendToOutFile append bytes to out.txt file
@@ -56,19 +56,12 @@ func writeAllWS() {
 			os.Exit(1)
 		}
 
-		if n == 0 {
-			time.Sleep(100 * time.Millisecond)
-			continue
-		}
-
-		for _, c := range connections {
-			err := c.Write(context.Background(), websocket.MessageBinary, msg[:n])
+		for _, c := range clients {
+			cn, err := c.Write(msg[:n]) // TODO: check if cn < n and if so, write the rest
+			_ = cn                      // TODO: remove this line
 			if err != nil {
-				if websocket.CloseStatus(err) != websocket.StatusNormalClosure {
-					log.Printf("error writing to websocket: %s, %v\r\n",
-						err, websocket.CloseStatus(err)) // TODO: send to file, not the screen
-				}
-				removeConnection(c) // TODO: is this safe?
+				log.Printf("error writing to websocket: %s\r\n", err)
+				removeConnection(c)
 			}
 		}
 	}
@@ -119,11 +112,13 @@ func runCmd() {
 				// Update window size.
 				_ = pty.InheritSize(os.Stdin, ptmx)
 
-				sizeWidth, sizeHeight, err := term.GetSize(int(os.Stdin.Fd()))
+				sizeWidth, sizeHeight, err := term.GetSize(
+					int(os.Stdin.Fd()))
 				if err != nil {
 					log.Fatalf("error getting size: %s\r\n", err)
 				}
-				bs.Write([]byte(fmt.Sprintf("\033[8;%d;%dt", sizeHeight, sizeWidth)))
+				bs.Write([]byte(fmt.Sprintf("\033[8;%d;%dt",
+					sizeHeight, sizeWidth)))
 			case syscall.SIGTERM, os.Interrupt:
 				removeAllConnections()
 				restoreTerm()
@@ -153,43 +148,43 @@ func removeAllConnections() {
 	connMutex.Lock()
 	defer connMutex.Unlock()
 
-	for _, conn := range connections {
-		err := conn.Close(websocket.StatusNormalClosure, "server shutdown")
+	for _, c := range clients {
+		err := c.Close()
 		if err != nil {
 			log.Printf("error closing websocket: %s\r\n", err)
 		}
 	}
-	connections = []*websocket.Conn{}
+	clients = nil
 }
 
-func removeConnection(c *websocket.Conn) {
+func removeConnection(c *client.Client) {
 	connMutex.Lock()
 	defer connMutex.Unlock()
 
-	for i, conn := range connections {
-		if conn == c {
-			connections = append(connections[:i], connections[i+1:]...)
-
+	for i, client := range clients {
+		if client == c {
+			client.Close()
+			clients = append(clients[:i], clients[i+1:]...)
 			break
 		}
 	}
 }
 
-func readMessages(c *websocket.Conn) {
+func readMessages(client *client.Client) {
 	for {
-		_, msg, err := c.Read(context.Background())
+		buffer := make([]byte, 8192)
+		n, err := client.Read(buffer)
 		if err != nil {
 			log.Printf("error reading from websocket: %s\r\n", err)
-			removeConnection(c)
-
+			removeConnection(client)
 			return
 		}
 
-		processInput(c, msg)
+		processInput(client, buffer[:n])
 	}
 }
 
-func processInput(c *websocket.Conn, b []byte) {
+func processInput(client *client.Client, b []byte) {
 	log.Printf("received: %q\r\n", b)
 }
 
@@ -201,11 +196,14 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	c.Write(context.Background(), websocket.MessageBinary, []byte("Welcome to the hall of tortured souls!\r\n"))
+	client := client.New(c)
+	client.Write([]byte("Welcome to the hall of tortured souls!\r\n"))
 
 	connMutex.Lock()
-	connections = append(connections, c)
+	clients = append(clients, client)
 	connMutex.Unlock()
+
+	go client.WriteLoop()
 
 	//go readMessages(c)
 }
