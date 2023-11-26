@@ -42,8 +42,6 @@ func appendToOutFile(p []byte) {
 	}
 }
 
-var contadorDePacotes = 1
-
 func writeAllWS() {
 
 	msg := make([]byte, 8192)
@@ -63,25 +61,12 @@ func writeAllWS() {
 			continue
 		}
 
-		// convert to base64
-
-		//msgB64 := base64.StdEncoding.EncodeToString(msg[:n])
-
-		// md5 of base64
-		//md5msg := md5.Sum(msg)
-
-		//fmt.Printf("md5: %d -> %x\r\n", contadorDePacotes, md5msg)
-		//os.Stderr.WriteString(fmt.Sprintf("md5: %d -> %x\r\n", contadorDePacotes, md5msg))
-
-		//payload := fmt.Sprintf("%d", contadorDePacotes) + ";" + fmt.Sprintf("%x", md5msg) + "|" + string(msgB64)
-		//payload := fmt.Sprintf("%d", contadorDePacotes) + ";x|" + string(msgB64)
-		//contadorDePacotes++
-
 		for _, c := range connections {
 			err := c.Write(context.Background(), websocket.MessageBinary, msg[:n])
 			if err != nil {
 				if websocket.CloseStatus(err) != websocket.StatusNormalClosure {
-					log.Printf("error writing to websocket: %s, %v\r\n", err, websocket.CloseStatus(err)) // TODO: send to file, not the screen
+					log.Printf("error writing to websocket: %s, %v\r\n",
+						err, websocket.CloseStatus(err)) // TODO: send to file, not the screen
 				}
 				removeConnection(c) // TODO: is this safe?
 			}
@@ -98,11 +83,6 @@ func (o termIO) Write(p []byte) (n int, err error) {
 	if err != nil {
 		return
 	}
-
-	// write to websocket
-	//writeWSChan <- p
-
-	// writeAllWS(p)
 
 	bs.Write(p)
 
@@ -220,9 +200,6 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
-
-	//b64 := base64.StdEncoding.EncodeToString([]byte("Welcome to the hall of tortured souls!\r\n"))
-	//msg := fmt.Sprintf("255;%x|%s", md5.Sum([]byte(b64)), b64)
 
 	c.Write(context.Background(), websocket.MessageBinary, []byte("Welcome to the hall of tortured souls!\r\n"))
 
