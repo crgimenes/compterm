@@ -27,7 +27,6 @@ var (
 	termio      = termIO{}
 	connections []*websocket.Conn
 	connMutex   sync.Mutex
-	writeWSChan = make(chan []byte, 100)
 	bs          = byteStream.NewByteStream()
 )
 
@@ -145,7 +144,7 @@ func runCmd() {
 				if err != nil {
 					log.Fatalf("error getting size: %s\r\n", err)
 				}
-				writeWSChan <- []byte(fmt.Sprintf("\033[8;%d;%dt", sizeHeight, sizeWidth))
+				bs.Write([]byte(fmt.Sprintf("\033[8;%d;%dt", sizeHeight, sizeWidth)))
 			case syscall.SIGTERM, os.Interrupt:
 				removeAllConnections()
 				restoreTerm()
