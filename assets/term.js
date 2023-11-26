@@ -46,6 +46,7 @@ let progressIndex = 0;
 function connectWS() {
 
     const ws = new WebSocket(`ws://${window.location.host}/ws`);
+    ws.binaryType = 'blob';
 
     ws.onopen = () => {
         terminal.clear();
@@ -53,19 +54,28 @@ function connectWS() {
     };
 
     let x = "";
-
+    var buffer;
+    
     ws.onmessage = (event) => {
 
-        console.log(event.data);
+        //console.log(event.data);
 
 
-        i = event.data.substring(0, event.data.indexOf(";"));
-        md5 = event.data.substring(event.data.indexOf(";") + 1, event.data.indexOf("|"));
-        msg = event.data.substring(event.data.indexOf("|") + 1);
+        //i = event.data.substring(0, event.data.indexOf(";"));
+        //md5 = event.data.substring(event.data.indexOf(";") + 1, event.data.indexOf("|"));
+        //msg = event.data.substring(event.data.indexOf("|") + 1);
         
-        x = x + i + " -> " + md5 + "\n";
+        //x = x + i + " -> " + md5 + "\n";
 
-        terminal.write(base64ToBytes(msg));
+        //terminal.write(base64ToBytes(msg));
+        //
+        var reader = new FileReader();
+        reader.readAsArrayBuffer(event.data);
+        reader.addEventListener("loadend", function(e)
+        {
+            buffer = new Uint8Array(reader.result);
+            terminal.write(buffer);
+        });
     };
 
     ws.onerror = () => {

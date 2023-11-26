@@ -3,8 +3,6 @@ package main
 import (
 	"compterm/byteStream"
 	"context"
-	"crypto/md5"
-	"encoding/base64"
 	"fmt"
 	"io"
 	"log"
@@ -12,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"runtime"
 	"sync"
 	"syscall"
 	"time"
@@ -66,7 +65,7 @@ func writeAllWS() {
 
 		// convert to base64
 
-		msgB64 := base64.StdEncoding.EncodeToString(msg[:n])
+		//msgB64 := base64.StdEncoding.EncodeToString(msg[:n])
 
 		// md5 of base64
 		//md5msg := md5.Sum(msg)
@@ -75,11 +74,11 @@ func writeAllWS() {
 		//os.Stderr.WriteString(fmt.Sprintf("md5: %d -> %x\r\n", contadorDePacotes, md5msg))
 
 		//payload := fmt.Sprintf("%d", contadorDePacotes) + ";" + fmt.Sprintf("%x", md5msg) + "|" + string(msgB64)
-		payload := fmt.Sprintf("%d", contadorDePacotes) + ";x|" + string(msgB64)
-		contadorDePacotes++
+		//payload := fmt.Sprintf("%d", contadorDePacotes) + ";x|" + string(msgB64)
+		//contadorDePacotes++
 
 		for _, c := range connections {
-			err := c.Write(context.Background(), websocket.MessageText, []byte(payload))
+			err := c.Write(context.Background(), websocket.MessageBinary, msg[:n])
 			if err != nil {
 				if websocket.CloseStatus(err) != websocket.StatusNormalClosure {
 					log.Printf("error writing to websocket: %s, %v\r\n", err, websocket.CloseStatus(err)) // TODO: send to file, not the screen
@@ -222,11 +221,10 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	b64 := base64.StdEncoding.EncodeToString([]byte("Welcome to the hall of tortured souls!\r\n"))
+	//b64 := base64.StdEncoding.EncodeToString([]byte("Welcome to the hall of tortured souls!\r\n"))
+	//msg := fmt.Sprintf("255;%x|%s", md5.Sum([]byte(b64)), b64)
 
-	msg := fmt.Sprintf("255;%x|%s", md5.Sum([]byte(b64)), b64)
-
-	c.Write(context.Background(), websocket.MessageText, []byte(msg))
+	c.Write(context.Background(), websocket.MessageBinary, []byte("Welcome to the hall of tortured souls!\r\n"))
 
 	connMutex.Lock()
 	connections = append(connections, c)
@@ -235,12 +233,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 	//go readMessages(c)
 }
 
-func main() {
-	log.SetFlags(log.LstdFlags | log.Lshortfile)
-
-	go runCmd()
-	go writeAllWS()
-
+func serveHTTP() {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/ws", wsHandler)
@@ -256,5 +249,15 @@ func main() {
 
 	log.Printf("Listening on port %d\n", 8080)
 	log.Fatal(s.ListenAndServe())
+}
 
+func main() {
+	log.SetFlags(log.LstdFlags | log.Lshortfile)
+
+	go writeAllWS()
+	go runCmd()
+
+	runtime.Gosched()
+
+	serveHTTP()
 }
