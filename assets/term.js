@@ -52,8 +52,20 @@ function connectWS() {
         terminal.reset();
     };
 
+    let x = "";
+
     ws.onmessage = (event) => {
-        terminal.write(base64ToBytes(event.data));
+
+        console.log(event.data);
+
+
+        i = event.data.substring(0, event.data.indexOf(";"));
+        md5 = event.data.substring(event.data.indexOf(";") + 1, event.data.indexOf("|"));
+        msg = event.data.substring(event.data.indexOf("|") + 1);
+        
+        x = x + i + " -> " + md5 + "\n";
+
+        terminal.write(base64ToBytes(msg));
     };
 
     ws.onerror = () => {
@@ -66,6 +78,8 @@ function connectWS() {
 
 
     ws.onclose = () => {
+        //console.log(x);
+
         terminal.clear();
         terminal.reset();
         terminal.write('Connection closed.\r\nReconnecting… ');

@@ -1,7 +1,9 @@
 package main
 
 import (
+	"compterm/byteStream"
 	"context"
+	"crypto/md5"
 	"encoding/base64"
 	"fmt"
 	"io"
@@ -25,7 +27,8 @@ var (
 	termio      = termIO{}
 	connections []*websocket.Conn
 	connMutex   sync.Mutex
-	writeWSChan = make(chan []byte, 8192)
+	writeWSChan = make(chan []byte, 100)
+	bs          = byteStream.NewByteStream()
 )
 
 // appendToOutFile append bytes to out.txt file
@@ -41,33 +44,56 @@ func appendToOutFile(p []byte) {
 	}
 }
 
-func writeWSLoop() {
+var contadorDePacotes = 1
+
+func writeAllWS() {
+
+	msg := make([]byte, 1024)
 	for {
-		select {
-		case msg := <-writeWSChan:
-			writeAllWS(msg)
-		}
-	}
-}
-
-func writeAllWS(msg []byte) {
-	// convert to base64
-	payload := base64.StdEncoding.EncodeToString(msg)
-
-	for _, c := range connections {
-		err := c.Write(context.Background(), websocket.MessageText, []byte(payload))
+		n, err := bs.Read(msg)
 		if err != nil {
-			if websocket.CloseStatus(err) != websocket.StatusNormalClosure {
-				log.Printf("error writing to websocket: %s, %v\r\n", err, websocket.CloseStatus(err)) // TODO: send to file, not the screen
+			if err == io.EOF {
+				time.Sleep(100 * time.Millisecond)
+				continue
 			}
-			removeConnection(c) // TODO: is this safe?
+			log.Printf("error reading from byte stream: %s\r\n", err)
+			os.Exit(1)
+		}
+
+		if n == 0 {
+			time.Sleep(100 * time.Millisecond)
+			continue
+		}
+
+		// convert to base64
+
+		msgB64 := base64.StdEncoding.EncodeToString(msg[:n])
+
+		// md5 of base64
+		//md5msg := md5.Sum(msg)
+
+		//fmt.Printf("md5: %d -> %x\r\n", contadorDePacotes, md5msg)
+		//os.Stderr.WriteString(fmt.Sprintf("md5: %d -> %x\r\n", contadorDePacotes, md5msg))
+
+		//payload := fmt.Sprintf("%d", contadorDePacotes) + ";" + fmt.Sprintf("%x", md5msg) + "|" + string(msgB64)
+		payload := fmt.Sprintf("%d", contadorDePacotes) + ";x|" + string(msgB64)
+		contadorDePacotes++
+
+		for _, c := range connections {
+			err := c.Write(context.Background(), websocket.MessageText, []byte(payload))
+			if err != nil {
+				if websocket.CloseStatus(err) != websocket.StatusNormalClosure {
+					log.Printf("error writing to websocket: %s, %v\r\n", err, websocket.CloseStatus(err)) // TODO: send to file, not the screen
+				}
+				removeConnection(c) // TODO: is this safe?
+			}
 		}
 	}
 }
 
 func (o termIO) Write(p []byte) (n int, err error) {
 	// append to out.txt file
-	// appendToOutFile(p)
+	//appendToOutFile(p)
 
 	// write to stdout
 	n, err = os.Stdout.Write(p)
@@ -76,7 +102,11 @@ func (o termIO) Write(p []byte) (n int, err error) {
 	}
 
 	// write to websocket
-	writeWSChan <- p
+	//writeWSChan <- p
+
+	// writeAllWS(p)
+
+	bs.Write(p)
 
 	return
 }
@@ -193,6 +223,12 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	b64 := base64.StdEncoding.EncodeToString([]byte("Welcome to the hall of tortured souls!\r\n"))
+
+	msg := fmt.Sprintf("255;%x|%s", md5.Sum([]byte(b64)), b64)
+
+	c.Write(context.Background(), websocket.MessageText, []byte(msg))
+
 	connMutex.Lock()
 	connections = append(connections, c)
 	connMutex.Unlock()
@@ -204,7 +240,7 @@ func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 
 	go runCmd()
-	go writeWSLoop()
+	go writeAllWS()
 
 	mux := http.NewServeMux()
 
