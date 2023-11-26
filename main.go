@@ -3,6 +3,7 @@ package main
 import (
 	"compterm/byteStream"
 	"compterm/client"
+	"compterm/config"
 	"fmt"
 	"io"
 	"log"
@@ -11,6 +12,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"runtime"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -86,7 +88,10 @@ func (o termIO) Write(p []byte) (n int, err error) {
 }
 
 func runCmd() {
-	c := exec.Command(os.Args[1], os.Args[2:]...)
+	cmdAux := config.CFG.Command
+	cmd := strings.Split(cmdAux, " ")
+
+	c := exec.Command(cmd[0], cmd[1:]...)
 	// Start the command with a pty.
 	ptmx, err := pty.Start(c)
 	if err != nil {
@@ -219,18 +224,23 @@ func serveHTTP() {
 
 	s := &http.Server{
 		Handler:        mux,
-		Addr:           fmt.Sprintf(":%d", 8080),
+		Addr:           config.CFG.Listen,
 		ReadTimeout:    5 * time.Second,
 		WriteTimeout:   5 * time.Second,
 		MaxHeaderBytes: 1 << 20,
 	}
 
-	log.Printf("Listening on port %d\n", 8080)
+	log.Printf("Listening on port %v\n", config.CFG.Listen)
 	log.Fatal(s.ListenAndServe())
 }
 
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
+
+	err := config.Load()
+	if err != nil {
+		log.Fatalf("error loading config: %s\r\n", err)
+	}
 
 	go writeAllWS()
 	go runCmd()
