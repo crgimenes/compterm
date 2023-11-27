@@ -9,9 +9,9 @@ import (
 )
 
 type Config struct {
-	Debug   bool   `json:"debug" ini:"debug" cfg:"debug" cfgDefault:"false"`
-	Listen  string `json:"listen" ini:"listen" cfg:"listen" cfgDefault:"0.0.0.0:2200"`
-	Command string `json:"command" ini:"command" cfg:"c" cfgDefault:"sh"`
+	Debug   bool   `json:"debug" ini:"debug" cfg:"debug" cfgDefault:"false" cfgHelper:"Enable debug mode"`
+	Listen  string `json:"listen" ini:"listen" cfg:"listen" cfgDefault:"0.0.0.0:2200" cfgHelper:"Listen address"`
+	Command string `json:"command" ini:"command" cfg:"c" cfgHelper:"Command to run default: $SHELL"`
 }
 
 var CFG *Config
@@ -39,5 +39,13 @@ func Load() error {
 	config.PrefixEnv = "COMPTERM_"
 	config.File = fullpath + "/config.ini"
 	err = config.Parse(CFG)
+	if err != nil {
+		return err
+	}
+
+	if CFG.Command == "" {
+		CFG.Command = os.Getenv("SHELL")
+	}
+
 	return err
 }
