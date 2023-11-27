@@ -4,8 +4,10 @@ import (
 	"compterm/byteStream"
 	"compterm/client"
 	"compterm/config"
+	"embed"
 	"fmt"
 	"io"
+	"io/fs"
 	"log"
 	"net/http"
 	"os"
@@ -30,6 +32,10 @@ var (
 	connMutex sync.Mutex
 	bs        = byteStream.NewByteStream()
 	ptmx      *os.File
+
+	// enbed assets
+	//go:embed assets/*
+	assets embed.FS
 )
 
 // appendToOutFile append bytes to out.txt file
@@ -221,10 +227,15 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func serveHTTP() {
+	subFS, err := fs.Sub(assets, "assets")
+	if err != nil {
+		log.Fatalf("error getting sub filesystem: %s\r\n", err)
+	}
+
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/ws", wsHandler)
-	mux.Handle("/", http.FileServer(http.Dir("assets")))
+	mux.Handle("/", http.FileServer(http.FS(subFS)))
 
 	s := &http.Server{
 		Handler:        mux,
