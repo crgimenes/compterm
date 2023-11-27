@@ -32,6 +32,16 @@ func (c *Client) Read(p []byte) (n int, err error) {
 	return c.bs.Read(p)
 }
 
+func (c *Client) ReadFromWS(p []byte) (n int, err error) {
+	_, r, err := c.conn.Read(context.Background())
+	if err != nil {
+		return 0, err
+	}
+
+	n = copy(p, r)
+	return n, nil
+}
+
 func (c *Client) Close() error {
 	return c.conn.Close(websocket.StatusNormalClosure, "")
 }

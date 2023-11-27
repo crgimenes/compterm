@@ -29,6 +29,7 @@ var (
 	clients   []*client.Client
 	connMutex sync.Mutex
 	bs        = byteStream.NewByteStream()
+	ptmx      *os.File
 )
 
 // appendToOutFile append bytes to out.txt file
@@ -88,12 +89,13 @@ func (o termIO) Write(p []byte) (n int, err error) {
 }
 
 func runCmd() {
+	var err error
 	cmdAux := config.CFG.Command
 	cmd := strings.Split(cmdAux, " ")
 
 	c := exec.Command(cmd[0], cmd[1:]...)
 	// Start the command with a pty.
-	ptmx, err := pty.Start(c)
+	ptmx, err = pty.Start(c)
 	if err != nil {
 		log.Fatalf("error starting pty: %s\r\n", err)
 	}
@@ -181,7 +183,7 @@ func removeConnection(c *client.Client) {
 func readMessages(client *client.Client) {
 	for {
 		buffer := make([]byte, 8192)
-		n, err := client.Read(buffer)
+		n, err := client.ReadFromWS(buffer)
 		if err != nil {
 			log.Printf("error reading from websocket: %s\r\n", err)
 			removeConnection(client)
@@ -193,7 +195,7 @@ func readMessages(client *client.Client) {
 }
 
 func processInput(client *client.Client, b []byte) {
-	log.Printf("received: %q\r\n", b)
+	_, _ = io.Copy(ptmx, strings.NewReader(string(b)))
 }
 
 func wsHandler(w http.ResponseWriter, r *http.Request) {
@@ -213,7 +215,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 
 	go client.WriteLoop()
 
-	//go readMessages(c)
+	// go readMessages(client)
 }
 
 func serveHTTP() {
