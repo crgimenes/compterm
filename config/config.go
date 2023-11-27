@@ -12,6 +12,7 @@ type Config struct {
 	Debug   bool   `json:"debug" ini:"debug" cfg:"debug" cfgDefault:"false" cfgHelper:"Enable debug mode"`
 	Listen  string `json:"listen" ini:"listen" cfg:"listen" cfgDefault:"0.0.0.0:2200" cfgHelper:"Listen address"`
 	Command string `json:"command" ini:"command" cfg:"c" cfgHelper:"Command to run default: $SHELL"`
+	MOTD    string `json:"motd" ini:"motd" cfg:"motd" cfgHelper:"Message of the day"`
 }
 
 var CFG *Config

@@ -207,7 +207,9 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	client := client.New(c)
-	client.Write([]byte("Welcome to the hall of tortured souls!\r\n"))
+	if config.CFG.MOTD != "" {
+		client.Write([]byte(config.CFG.MOTD + "\r\n"))
+	}
 
 	connMutex.Lock()
 	clients = append(clients, client)
