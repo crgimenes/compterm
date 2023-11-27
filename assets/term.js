@@ -29,16 +29,9 @@ const termOptions = {
 const terminal = new Terminal(termOptions);
 terminal.open(document.getElementById('terminal'));
 
-
-function base64ToBytes(base64) {
-  const binString = atob(base64);
-  return Uint8Array.from(binString, (m) => m.codePointAt(0));
-}
-
-function bytesToBase64(bytes) {
-  const binString = String.fromCodePoint(...bytes);
-  return btoa(binString);
-}
+const fitAddon = new FitAddon.FitAddon();
+terminal.resize(80, 24);
+fitAddon.fit();
 
 const progress = '/-\\|';
 let progressIndex = 0;
@@ -48,45 +41,26 @@ function connectWS() {
     const ws = new WebSocket(`ws://${window.location.host}/ws`);
     ws.binaryType = 'blob';
 
-    ws.onopen = () => {
-        terminal.clear();
-        terminal.reset();
+    ws.onopen = () => terminal.reset();
+
+    ws.onmessage = ({ data }) => {
+        const reader = new FileReader();
+        reader.onload = () => terminal.write(new Uint8Array(reader.result));
+        reader.readAsArrayBuffer(data);
     };
 
-    var buffer;
-    
-    ws.onmessage = (event) => {
-        var reader = new FileReader();
-        reader.readAsArrayBuffer(event.data);
-        reader.addEventListener("loadend", function(e)
-        {
-            buffer = new Uint8Array(reader.result);
-            terminal.write(buffer);
-        });
-    };
-
-    ws.onerror = () => {
-        ws.close();
-    };
-
-    terminal.onKey(e => {
-        ws.send(e.key);
-    });
-
+    ws.onerror = () => ws.close();
 
     ws.onclose = () => {
-        terminal.clear();
         terminal.reset();
-        terminal.write('Connection closed.\r\nReconnecting… ');
+        terminal.write(`\x1b[2J\x1b[0;0HConnection closed.\r\nReconnecting… ${progress[progressIndex]}\r\n`);
         progressIndex = (progressIndex + 1) % progress.length;
-        terminal.write("\b" + progress[progressIndex]);
         setTimeout(connectWS, 1000);
     };
+
+    terminal.onKey(({ key }) => ws.send(key));
+
 }
 
 connectWS();
-
-const fitAddon = new FitAddon.FitAddon();
-terminal.resize(80, 24);
-fitAddon.fit();
 
