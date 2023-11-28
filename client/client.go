@@ -3,6 +3,7 @@ package client
 import (
 	"compterm/byteStream"
 	"context"
+	"fmt"
 	"log"
 
 	"nhooyr.io/websocket"
@@ -27,6 +28,14 @@ func New(conn *websocket.Conn) *Client {
 func (c Client) SendMessage(p []byte) (n int, err error) {
 	p = append([]byte{0x1}, p...)
 	return c.Write(p)
+}
+
+func (c Client) ResizeTerminal(rows, cols int) (n int, err error) {
+	return c.SendCommand(0x2, []byte(fmt.Sprintf("%d:%d", rows, cols)))
+}
+
+func (c *Client) SendCommand(prefix byte, p []byte) (n int, err error) {
+	return c.bs.Write(append([]byte{prefix}, p...))
 }
 
 func (c *Client) Write(p []byte) (n int, err error) {

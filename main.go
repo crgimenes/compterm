@@ -89,6 +89,20 @@ func (o termIO) Write(p []byte) (n int, err error) {
 	return
 }
 
+func sendCommandToAll(command byte, params []byte) {
+	connMutex.Lock()
+	for _, c := range clients {
+		cn, err := c.SendCommand(command, params)
+		_ = cn
+		if err != nil {
+			log.Printf("error writing to websocket: %s\r\n", err)
+			removeConnection(c)
+			connMutex.Unlock()
+		}
+	}
+	connMutex.Unlock()
+}
+
 func runCmd() {
 	var err error
 	cmdAux := config.CFG.Command
@@ -129,6 +143,8 @@ func runCmd() {
 					log.Fatalf("error getting size: %s\r\n", err)
 				}
 				bs.Write([]byte(fmt.Sprintf("\033[8;%d;%dt",
+					sizeHeight, sizeWidth)))
+				sendCommandToAll(0x2, []byte(fmt.Sprintf("%d:%d",
 					sizeHeight, sizeWidth)))
 			case syscall.SIGTERM, os.Interrupt:
 				removeAllConnections()
@@ -208,6 +224,13 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	client := client.New(c)
+
+	sizeWidth, sizeHeight, err := term.GetSize(int(os.Stdin.Fd()))
+	if err != nil {
+		log.Println(err)
+	}
+	_, _ = client.ResizeTerminal(sizeHeight, sizeWidth)
+
 	if config.CFG.MOTD != "" {
 		client.SendMessage([]byte(config.CFG.MOTD + "\r\n"))
 	}

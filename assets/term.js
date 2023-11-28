@@ -30,7 +30,6 @@
 
     const terminal = new Terminal(termOptions);
     terminal.open(document.getElementById('terminal'));
-    terminal.resize(80, 24);
 
     const progress = '/-\\|';
     let progressIndex = 0;
@@ -46,11 +45,15 @@
             const reader = new FileReader();
             reader.onload = () => {
                 const array = new Uint8Array(reader.result);
+                const params = array.slice(1);
                 switch (array.slice(0, 1)[0]) {
                     case 0x1:
-                        terminal.write(array.slice(1));
+                        terminal.write(params);
                         break;
-
+                    case 0x2:
+                        const [cols, rows] = (new TextDecoder().decode(params)).split(':')
+                        terminal.resize(+rows, +cols);
+                        break
                     default:
                         console.log("not implemented", array);
                         break;
