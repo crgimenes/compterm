@@ -3,3 +3,4 @@ all:
 
 dev:
 	go run -tags dev .
+
