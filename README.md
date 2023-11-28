@@ -34,24 +34,24 @@ In production mode, resources are integrated into the executable itself.
 
 Compterm accepts the following command-line arguments:
 
-. -c string: Command to run (default: $SHELL)
-. -debug: Enable debug mode
-. -listen string: Listen address (default "0.0.0.0:2200")
-. -motd string: Message of the day
+- -c string: Command to run (default: $SHELL)
+- -debug: Enable debug mode
+- -listen string: Listen address (default "0.0.0.0:2200")
+- -motd string: Message of the day
 
 It also recognizes these environment variables:
 
-. $COMPTERM_DEBUG bool (default "false")
-. $COMPTERM_LISTEN string (default "0.0.0.0:2200")
-. $COMPTERM_C string
-. $COMPTERM_MOTD string (default "")
+- $COMPTERM_DEBUG bool (default "false")
+- $COMPTERM_LISTEN string (default "0.0.0.0:2200")
+- $COMPTERM_C string
+- $COMPTERM_MOTD string (default "")
 
 Additionally, you can configure Compterm using a config.ini file located in ~/.config/compterm/config.ini with the following parameters:
 
-. debug
-. listen
-. command
-. motd
+- debug
+- listen
+- command
+- motd
 
 ## Configuration Hierarchy
 
