@@ -37,7 +37,7 @@ func Load() error {
 	}
 
 	CFG = &Config{}
-	config.PrefixEnv = "COMPTERM_"
+	config.PrefixEnv = "COMPTERM"
 	config.File = fullpath + "/config.ini"
 	err = config.Parse(CFG)
 	if err != nil {
