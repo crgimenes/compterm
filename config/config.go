@@ -31,7 +31,7 @@ func Load() error {
 	}
 
 	// cria o diretório
-	err = os.MkdirAll(fullpath, 0755)
+	err = os.MkdirAll(fullpath, 0750)
 	if err != nil {
 		return err
 	}

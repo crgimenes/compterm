@@ -35,7 +35,7 @@ var (
 
 // appendToOutFile append bytes to out.txt file
 func appendToOutFile(p []byte) {
-	f, err := os.OpenFile("out.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	f, err := os.OpenFile("out.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
 	if err != nil {
 		log.Fatalf("error opening file: %s\r\n", err)
 	}
