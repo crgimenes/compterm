@@ -44,7 +44,18 @@
 
         ws.onmessage = ({ data }) => {
             const reader = new FileReader();
-            reader.onload = () => terminal.write(new Uint8Array(reader.result));
+            reader.onload = () => {
+                const array = new Uint8Array(reader.result);
+                switch (array.slice(0, 1)[0]) {
+                    case 0x1:
+                        terminal.write(array.slice(1));
+                        break;
+
+                    default:
+                        console.log("not implemented", array);
+                        break;
+                }
+            };
             reader.readAsArrayBuffer(data);
         };
 

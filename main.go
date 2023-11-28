@@ -62,8 +62,8 @@ func writeAllWS() {
 
 		connMutex.Lock()
 		for _, c := range clients {
-			cn, err := c.Write(msg[:n]) // TODO: check if cn < n and if so, write the rest
-			_ = cn                      // TODO: remove this line
+			cn, err := c.SendMessage(msg[:n]) // TODO: check if cn < n and if so, write the rest
+			_ = cn                            // TODO: remove this line
 			if err != nil {
 				log.Printf("error writing to websocket: %s\r\n", err)
 				removeConnection(c)
@@ -209,7 +209,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 
 	client := client.New(c)
 	if config.CFG.MOTD != "" {
-		client.Write([]byte(config.CFG.MOTD + "\r\n"))
+		client.SendMessage([]byte(config.CFG.MOTD + "\r\n"))
 	}
 
 	connMutex.Lock()
