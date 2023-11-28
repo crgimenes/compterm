@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/base64"
 	"io"
 	"log"
 	"os"
@@ -16,7 +15,7 @@ import (
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 
-	c, _, err := websocket.Dial(context.Background(), "ws://localhost:8080/ws", nil)
+	c, _, err := websocket.Dial(context.Background(), "ws://localhost:2200/ws", nil)
 	if err != nil {
 		log.Println(err)
 	}
@@ -59,13 +58,17 @@ func main() {
 			break
 		}
 
-		b, err := base64.StdEncoding.DecodeString(string(data))
-		if err != nil {
-			log.Println(err)
-
-			return
+		// command is the first byte of data
+		command := data[0]
+		switch command {
+		case 0x1:
+			// stdout
+			os.Stdout.Write(data[1:])
+		case 0x2:
+		// resize
+		default:
+			log.Printf("Unknown command: %v\n", command)
 		}
-		os.Stdout.Write(b)
 	}
 
 	c.Close(websocket.StatusNormalClosure, "")
