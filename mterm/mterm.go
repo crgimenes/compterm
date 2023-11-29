@@ -128,6 +128,7 @@ func (t *Terminal) GetScreenAsAnsi() []byte {
 		codes := []string{}
 		c := t.screen[i]
 		if c.cstate != lastState {
+			lastState = c.cstate
 			// different state, we shall reset and set the new state
 			fmt.Fprintf(buf, "\033[0m")
 			if c.flags&FlagFG != 0 {
