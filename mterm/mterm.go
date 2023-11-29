@@ -116,6 +116,9 @@ func (t *Terminal) Clear() {
 }
 
 func (t *Terminal) GetScreenAsAnsi() []byte {
+	t.mux.Lock()
+	defer t.mux.Unlock()
+
 	buf := bytes.NewBuffer(nil)
 	x, y := 0, 0
 	lastState := cstate{}
