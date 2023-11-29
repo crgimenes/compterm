@@ -2,7 +2,6 @@ package ansiParser
 
 import (
 	"bytes"
-	"strconv"
 	"sync"
 )
 
@@ -22,28 +21,134 @@ const (
 	IGNORE
 )
 
+type Color struct {
+	Red   uint8
+	Green uint8
+	Blue  uint8
+}
+
+type ScreenCell struct {
+	Char rune
+	FG   Color
+	BG   Color
+}
+
 type ANSIParser struct {
-	buffer bytes.Buffer
+	screen []ScreenCell
 	mux    sync.Mutex
+	state  int
 
 	cursorLine int
 	cursorCol  int
 
 	MaxCols int
+	MaxRows int
 
-	state int
+	TabSize int
 
-	CSIParams string
+	params string // CSI parameters
 }
 
-func New() *ANSIParser {
-	return &ANSIParser{
+func New(rows, cols int) *ANSIParser {
+	r := &ANSIParser{
+		MaxCols: cols,
+		MaxRows: rows,
+
+		cursorLine: 0,
+		cursorCol:  0,
+
+		screen: make([]ScreenCell, rows*cols),
+
+		TabSize: 4,
+
+		params: "",
+
 		state: NORMAL,
+	}
+	for i := 0; i < rows*cols; i++ {
+		r.screen[i].Char = ' '
+	}
+
+	return r
+}
+
+func (ap *ANSIParser) Resize(rows, cols int) {
+	ap.mux.Lock()
+	defer ap.mux.Unlock()
+
+	ap.MaxCols = cols
+	ap.MaxRows = rows
+
+	ap.cursorLine = 0
+	ap.cursorCol = 0
+
+	ap.screen = make([]ScreenCell, rows*cols)
+}
+
+func (ap *ANSIParser) PutCharWithColor(r rune, fg, bg Color) {
+	ap.mux.Lock()
+	defer ap.mux.Unlock()
+
+	i := ap.cursorLine*ap.MaxCols + ap.cursorCol
+	ap.screen[i].Char = r
+	ap.screen[i].FG = fg
+	ap.screen[i].BG = bg
+
+	ap.cursorCol++
+
+	if ap.cursorCol >= ap.MaxCols {
+		ap.cursorCol = 0
+		ap.cursorLine++
+	}
+
+	if ap.cursorLine >= ap.MaxRows {
+		ap.cursorLine = 0
 	}
 }
 
-func (ap *ANSIParser) Read(p []byte) (int, error) {
-	return ap.buffer.Read(p)
+func (ap *ANSIParser) Put(r rune) {
+	ap.mux.Lock()
+	defer ap.mux.Unlock()
+
+	i := ap.cursorLine*ap.MaxCols + ap.cursorCol
+	ap.screen[i].Char = r
+	ap.cursorCol++
+
+	if ap.cursorCol >= ap.MaxCols {
+		ap.cursorCol = 0
+		ap.cursorLine++
+	}
+
+	if ap.cursorLine >= ap.MaxRows {
+		ap.cursorLine = 0
+	}
+}
+
+func (ap *ANSIParser) Clear() {
+	ap.mux.Lock()
+	defer ap.mux.Unlock()
+
+	ap.cursorLine = 0
+	ap.cursorCol = 0
+
+	ap.screen = make([]ScreenCell, ap.MaxRows*ap.MaxCols)
+}
+
+// GetScreenAsAnsi returns the screen as ANSI
+func (ap *ANSIParser) GetScreenAsAnsi() []byte {
+	ap.mux.Lock()
+	defer ap.mux.Unlock()
+
+	buffer := make([]byte, 0, ap.MaxRows*ap.MaxCols*8) // try to guess the size of the buffer
+	bs := bytes.NewBuffer(buffer)
+
+	for i := 0; i < ap.MaxRows*ap.MaxCols; i++ {
+		// TODO: implement colors and other attributes
+		cell := ap.screen[i]
+		bs.WriteRune(cell.Char)
+	}
+
+	return bs.Bytes()
 }
 
 func isCSIFinal(b byte) bool {
@@ -51,100 +156,8 @@ func isCSIFinal(b byte) bool {
 }
 
 func (ap *ANSIParser) Write(p []byte) (int, error) {
-	var err error
-	ap.mux.Lock()
-	defer ap.mux.Unlock()
-
 	for _, b := range p {
-		switch ap.state {
-		case NORMAL:
-			switch b {
-			case '\t':
-				ap.cursorCol += 4 // TODO: get tab size from terminal
-				ap.buffer.WriteByte(b)
-			case '\b':
-				if ap.cursorCol == 0 {
-					if ap.cursorLine > 0 {
-						ap.cursorLine--
-					}
-				} else {
-					ap.cursorCol--
-				}
-				ap.buffer.WriteByte(b)
-			case '\r':
-				ap.cursorCol = 0
-				ap.buffer.WriteByte(b)
-			case '\n':
-				ap.cursorLine++
-				ap.buffer.WriteByte(b)
-			case '\x1b':
-				ap.state = ESCAPE
-				ap.buffer.WriteByte(b)
-			case '\x7f': // DEL
-				ap.buffer.WriteByte(b)
-			case '\x00': // NUL
-				ap.buffer.WriteByte(b)
-			default:
-				if ap.cursorCol >= ap.MaxCols {
-					ap.cursorCol = 0
-					ap.buffer.Write([]byte{'\r', '\n'})
-				}
-				ap.cursorCol++
-			}
-		case ESCAPE:
-			switch b {
-			case '[':
-				ap.state = CSI
-				ap.buffer.WriteByte(b)
-			case ']':
-				ap.state = OSC
-				ap.buffer.WriteByte(b)
-			case 'P':
-				ap.state = DCS
-				ap.buffer.WriteByte(b)
-			case 'X':
-				ap.state = IGNORE
-				ap.buffer.WriteByte(b)
-			case CSI:
-				// need to acumulate the parameters and execute the command when we get the final byte
-				// example CSI n E where n is the parameter and E is the command (cursor down n lines)
-				switch {
-				case b >= 0x40 && b <= 0x7E: // CSI final byte (execute command)
-					switch b {
-					case 'A': // cursor up
-						ap.state = NORMAL
-						ap.buffer.WriteByte(b)
-						// parse the parameter
-						n := 1
-						if ap.CSIParams != "" {
-							n, err = strconv.Atoi(ap.CSIParams)
-							if err != nil {
-								n = 1
-							}
-						}
-						ap.cursorLine -= n
-						if ap.cursorLine < 0 {
-							ap.cursorLine = 0
-						}
-
-						// clear the parameter
-						ap.CSIParams = ""
-					}
-				default:
-					//ap.state = CSI
-					ap.buffer.WriteByte(b)
-					ap.CSIParams += string(b)
-				}
-			case OSC:
-			case DCS:
-			case ST:
-				ap.state = NORMAL
-			case IGNORE:
-			}
-		default:
-			ap.state = NORMAL
-		}
-
+		ap.Put(rune(b))
 	}
 	return len(p), nil
 }
