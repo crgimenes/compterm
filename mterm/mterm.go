@@ -68,7 +68,7 @@ func New(rows, cols int) *Terminal {
 
 		screen: screen,
 
-		TabSize: 5,
+		TabSize: 8,
 
 		stateProc: (*Terminal).normal,
 	}
@@ -128,12 +128,11 @@ func (t *Terminal) GetScreenAsAnsi() []byte {
 			x = 0
 			fmt.Fprintln(buf) // not needed?!
 		}
-		codes := []string{}
 		c := t.screen[i]
 		if c.cstate != lastState {
 			lastState = c.cstate
+			codes := []string{"0"}
 			// different state, we shall reset and set the new state
-			fmt.Fprintf(buf, "\033[0m")
 			if c.flags&FlagFG != 0 {
 				codes = append(codes,
 					fmt.Sprintf("38;2;%d;%d;%d", c.FG[0], c.FG[1], c.FG[2]),
@@ -164,10 +163,7 @@ func (t *Terminal) GetScreenAsAnsi() []byte {
 			if c.flags&FlagStrike != 0 {
 				codes = append(codes, "9")
 			}
-			if len(codes) > 0 {
-				// log.Printf("Code: \\033[%vm", strings.Join(codes, ";"))
-				fmt.Fprintf(buf, "\033[%sm", strings.Join(codes, ";"))
-			}
+			fmt.Fprintf(buf, "\033[%sm", strings.Join(codes, ";"))
 		}
 		r := c.Char
 		if r == 0 {
@@ -193,6 +189,8 @@ func (t *Terminal) normal(r rune) stateFn {
 	case '\n':
 		t.cursorCol = 0
 		// "scroll"
+		// Could implement a func out of this
+		// to be used both in default and here
 		if t.cursorLine == t.MaxRows-1 {
 			copy(t.screen, t.screen[t.MaxCols:])
 			for i := len(t.screen) - t.MaxCols; i < len(t.screen); i++ {
@@ -203,8 +201,9 @@ func (t *Terminal) normal(r rune) stateFn {
 		}
 	case '\r':
 		t.cursorCol = 0
-	case '\t': // TODO: need to check if the alignment is OK, and if we need to wrap
-		t.cursorCol = t.cursorCol + (t.cursorCol+t.TabSize)%t.TabSize
+	case '\t':
+		// round to a multiple of tabSize for better alignment
+		t.cursorCol = (t.cursorCol + t.TabSize) / t.TabSize * t.TabSize
 		t.cursorCol = min(t.cursorCol, t.MaxCols)
 	default:
 		cl := Cell{
@@ -226,7 +225,7 @@ func (t *Terminal) normal(r rune) stateFn {
 			}
 		}
 	}
-	return (*Terminal).normal
+	return nil
 }
 
 func (t *Terminal) esc(r rune) stateFn {
@@ -322,6 +321,7 @@ func (t *Terminal) csi() stateFn {
 				t.screen = make([]Cell, t.MaxCols*t.MaxRows)
 			}
 			return (*Terminal).normal
+		// case r == 'K': // Line based clears
 		// SGR
 		case r == 'm':
 			a := mkparam()
