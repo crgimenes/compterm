@@ -33,19 +33,6 @@ var (
 	ptmx      *os.File
 )
 
-// appendToOutFile append bytes to out.txt file
-func appendToOutFile(p []byte) {
-	f, err := os.OpenFile("out.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
-	if err != nil {
-		log.Fatalf("error opening file: %s\r\n", err)
-	}
-	defer f.Close()
-
-	if _, err := f.Write(p); err != nil {
-		log.Fatalf("error writing to file: %s\r\n", err)
-	}
-}
-
 func writeAllWS() {
 
 	msg := make([]byte, 8192)
