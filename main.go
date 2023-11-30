@@ -249,6 +249,27 @@ func serveHTTP() {
 	log.Fatal(s.ListenAndServe())
 }
 
+func apiHandler(w http.ResponseWriter, r *http.Request) {
+
+}
+
+func serveAPI() {
+	mux := http.NewServeMux()
+
+	mux.HandleFunc("/api/action", apiHandler)
+
+	s := &http.Server{
+		Handler:        mux,
+		Addr:           config.CFG.APIListen,
+		ReadTimeout:    5 * time.Second,
+		WriteTimeout:   5 * time.Second,
+		MaxHeaderBytes: 1 << 20,
+	}
+
+	log.Printf("Listening API on port %v\n", config.CFG.APIListen)
+	log.Fatal(s.ListenAndServe())
+}
+
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 
@@ -259,6 +280,7 @@ func main() {
 
 	go writeAllWS()
 	go runCmd()
+	go serveAPI()
 
 	runtime.Gosched()
 

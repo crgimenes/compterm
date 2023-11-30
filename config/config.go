@@ -11,6 +11,7 @@ import (
 type Config struct {
 	Debug        bool   `json:"debug" ini:"debug" cfg:"debug" cfgDefault:"false" cfgHelper:"Enable debug mode"`
 	Listen       string `json:"listen" ini:"listen" cfg:"listen" cfgDefault:"0.0.0.0:2200" cfgHelper:"Listen address"`
+	APIListen    string `json:"api_listen" ini:"api_listen" cfg:"api_listen" cfgDefault:"127.0.0.1:2201" cfgHelper:"API Listen address"`
 	Command      string `json:"command" ini:"command" cfg:"c" cfgHelper:"Command to run default: $SHELL"`
 	MOTD         string `json:"motd" ini:"motd" cfg:"motd" cfgHelper:"Message of the day"`
 	PlaybackFile string `json:"playback_file" ini:"playback_file" cfg:"playback_file" cfgDefault:"out.csv" cfgHelper:"Playback file"`
