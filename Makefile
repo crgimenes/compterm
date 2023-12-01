@@ -7,10 +7,10 @@ all:
 	go build -o $(BINARY_NAME) -ldflags "$(LDFLAGS) -extldflags '$(EXTLDFLAGS)'" . 
 
 dev:
-	go run -o $(BINARY_NAME)_dev -tags dev . 
+	go run -tags dev . 
 
 clean:
 	go clean
-	rm -f $(BINARY_NAME) $(BINARY_NAME)_dev
+	rm -f $(BINARY_NAME)
 
 .PHONY: all dev clean
