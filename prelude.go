@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strings"
 )
 
 var (
@@ -47,6 +48,25 @@ type RequestData struct {
 	Body    string
 	Headers map[string][]string
 	Form    map[string][]string
+}
+
+func getParameters(prefix string, r *http.Request) []string {
+	path := strings.TrimPrefix(r.URL.Path, prefix)
+	path = strings.TrimSuffix(path, "/")
+	path = strings.TrimSpace(path)
+	a := strings.Split(path, "/")
+
+	b := make([]string, len(a))
+	i := 0
+
+	for _, v := range a {
+		if v != "" {
+			b[i] = v
+			i++
+		}
+	}
+
+	return b[:i]
 }
 
 func prelude(w http.ResponseWriter, r *http.Request, methods []string, chkAuth bool) (*RequestData, error) {

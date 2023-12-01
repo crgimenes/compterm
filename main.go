@@ -261,23 +261,44 @@ func serveHTTP() {
 }
 
 func apiHandler(w http.ResponseWriter, r *http.Request) {
-
-	// get end of the path
-	path := r.URL.Path
-	log.Printf("path: %s\n", path)
-	cmd := path[len("/api/action/"):]
-
-	if cmd == "enable-ws-stream" {
-		wsStreamEnabled = true
+	_, err := prelude(w, r, []string{http.MethodGet}, true)
+	if err != nil {
 		return
 	}
 
+	parameters := getParameters("/api/action/", r)
+
+	// curl -X GET http://localhost:2201/api/action/enable-ws-stream
+
+	if len(parameters) != 1 {
+		log.Printf("invalid path")
+		errorBadRequest(w)
+		return
+	}
+
+	cmd := parameters[0]
+	switch cmd {
+	case "enable-ws-stream":
+		wsStreamEnabled = true
+		// send current terminal size
+		sizeWidth, sizeHeight, err := term.GetSize(int(os.Stdin.Fd()))
+		if err != nil {
+			log.Println(err)
+		}
+		sendCommandToAll(0x2, []byte(fmt.Sprintf("%d:%d", sizeHeight, sizeWidth)))
+	case "disable-ws-stream":
+		wsStreamEnabled = false
+	case "get-version":
+		_, _ = w.Write([]byte(GitTag))
+	default:
+		errorBadRequest(w)
+	}
 }
 
 func serveAPI() {
 	mux := http.NewServeMux()
 
-	mux.HandleFunc("/api/action", apiHandler)
+	mux.HandleFunc("/api/action/", apiHandler)
 
 	s := &http.Server{
 		Handler:        mux,
