@@ -26,15 +26,15 @@ import (
 type termIO struct{}
 
 var (
-	termio    = termIO{}
-	clients   []*client.Client
-	connMutex sync.Mutex
-	bs        = byteStream.NewByteStream()
-	ptmx      *os.File
+	termio          = termIO{}
+	clients         []*client.Client
+	connMutex       sync.Mutex
+	bs              = byteStream.NewByteStream()
+	ptmx            *os.File
+	wsStreamEnabled bool // Websocket stream enabled
 )
 
 func writeAllWS() {
-
 	msg := make([]byte, 8192)
 	for {
 		n, err := bs.Read(msg)
@@ -45,6 +45,10 @@ func writeAllWS() {
 			}
 			log.Printf("error reading from byte stream: %s\r\n", err)
 			os.Exit(1)
+		}
+
+		if !wsStreamEnabled {
+			continue
 		}
 
 		connMutex.Lock()
@@ -68,6 +72,7 @@ func (o termIO) Write(p []byte) (n int, err error) {
 	// write to stdout
 	n, err = os.Stdout.Write(p)
 	if err != nil {
+		log.Printf("error writing to stdout: %s\r\n", err)
 		return
 	}
 
@@ -131,8 +136,11 @@ func runCmd() {
 				}
 				bs.Write([]byte(fmt.Sprintf("\033[8;%d;%dt",
 					sizeHeight, sizeWidth)))
-				sendCommandToAll(0x2, []byte(fmt.Sprintf("%d:%d",
-					sizeHeight, sizeWidth)))
+
+				if wsStreamEnabled {
+					sendCommandToAll(0x2, []byte(fmt.Sprintf("%d:%d",
+						sizeHeight, sizeWidth)))
+				}
 			case syscall.SIGTERM, os.Interrupt:
 				removeAllConnections()
 				restoreTerm()
@@ -212,11 +220,13 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 
 	client := client.New(c)
 
-	sizeWidth, sizeHeight, err := term.GetSize(int(os.Stdin.Fd()))
-	if err != nil {
-		log.Println(err)
+	if wsStreamEnabled {
+		sizeWidth, sizeHeight, err := term.GetSize(int(os.Stdin.Fd()))
+		if err != nil {
+			log.Println(err)
+		}
+		_, _ = client.ResizeTerminal(sizeHeight, sizeWidth)
 	}
-	_, _ = client.ResizeTerminal(sizeHeight, sizeWidth)
 
 	if config.CFG.MOTD != "" {
 		client.SendMessage([]byte(config.CFG.MOTD + "\r\n"))
@@ -251,6 +261,16 @@ func serveHTTP() {
 
 func apiHandler(w http.ResponseWriter, r *http.Request) {
 
+	// get end of the path
+	path := r.URL.Path
+	log.Printf("path: %s\n", path)
+	cmd := path[len("/api/action/"):]
+
+	if cmd == "enable-ws-stream" {
+		wsStreamEnabled = true
+		return
+	}
+
 }
 
 func serveAPI() {
@@ -272,6 +292,8 @@ func serveAPI() {
 
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
+
+	//	wsStreamEnabled = true
 
 	err := config.Load()
 	if err != nil {
