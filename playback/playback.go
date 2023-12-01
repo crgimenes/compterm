@@ -1,7 +1,6 @@
 package playback
 
 import (
-	"compterm/config"
 	"encoding/csv"
 	"fmt"
 	"io"
@@ -17,48 +16,46 @@ type Data struct {
 	Time    int64
 }
 
-// rec data im csv format
-func Rec(cmd byte, payload []byte) {
-	file := config.CFG.PlaybackFile
+type Playback struct {
+	FileName string
+	f        *os.File
+	writer   *csv.Writer
+}
 
-	// Open file for appending. The file is created if it doesn't exist.
-	f, err := os.OpenFile(file, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+func NewPlayback() *Playback {
+	return &Playback{}
+}
+
+func (p *Playback) Open() error {
+	var err error
+	p.f, err = os.OpenFile(p.FileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		log.Fatalf("error opening file: %s\r\n", err)
 	}
 
-	// Make sure to close the file when you're done
-	defer f.Close()
+	p.writer = csv.NewWriter(p.f)
+	p.writer.Comma = ';'
 
-	// Cria um escritor CSV
-	writer := csv.NewWriter(f)
-	writer.Comma = ';'
-
-	defer writer.Flush()
-
-	data := []string{fmt.Sprintf("%d", cmd), string(payload), fmt.Sprintf("%d", time.Now().UnixNano())}
-	err = writer.Write(data)
-	if err != nil {
-		log.Fatalln("error writing record to file", err)
-	}
+	return nil
 }
 
-func Play(w io.Writer) error {
-	file := config.CFG.PlaybackFile
+func (p *Playback) Close() error {
+	p.writer.Flush()
+	return p.f.Close()
+}
 
-	// Open file for appending. The file is created if it doesn't exist.
-	f, err := os.OpenFile(file, os.O_RDONLY, 0644)
-	if err != nil {
-		return fmt.Errorf("error opening file: %s\r\n", err)
+// rec data im csv format
+func (p *Playback) Rec(cmd byte, payload []byte) error {
+	data := []string{
+		fmt.Sprintf("%d", cmd),
+		string(payload),
+		fmt.Sprintf("%d", time.Now().UnixNano()),
 	}
+	err := p.writer.Write(data)
+	return err
+}
 
-	// Make sure to close the file when you're done
-	defer f.Close()
-
-	// Cria um leitor CSV
-	reader := csv.NewReader(f)
-	reader.Comma = ';'
-
+func (p *Playback) Play(w io.Writer) error {
 	data := Data{}
 	lastTime := int64(0)
 
@@ -66,7 +63,7 @@ func Play(w io.Writer) error {
 		// TODO: add a way to stop the playback
 
 		// Read one record (until the next delimiter) from csvReader.
-		record, err := reader.Read()
+		record, err := csv.NewReader(p.f).Read()
 		if err != nil {
 			if err == io.EOF {
 				break
