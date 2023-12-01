@@ -5,6 +5,7 @@ import (
 	"compterm/byteStream"
 	"compterm/client"
 	"compterm/config"
+	"compterm/playback"
 	"fmt"
 	"io"
 	"log"
@@ -33,8 +34,9 @@ var (
 	ptmx            *os.File
 	wsStreamEnabled bool   // Websocket stream enabled
 	streamRecord    bool   // Websocket stream record
-	GitTag          string = "0.0.0"
+	GitTag          string = "0.0.0v"
 	PlaybackFile    string
+	pb              *playback.Playback
 )
 
 func writeAllWS() {
@@ -79,7 +81,12 @@ func (o termIO) Write(p []byte) (n int, err error) {
 		return
 	}
 
+	// write to websocket
 	bs.Write(p)
+
+	if streamRecord {
+		pb.Rec(0x1, p) // TODO: fix magic number
+	}
 
 	return
 }
@@ -144,6 +151,14 @@ func runCmd() {
 					sendCommandToAll(0x2, []byte(fmt.Sprintf("%d:%d",
 						sizeHeight, sizeWidth)))
 				}
+
+				if streamRecord {
+					pb.Rec(0x1, []byte(fmt.Sprintf("\033[8;%d;%dt",
+						sizeHeight, sizeWidth)))
+					pb.Rec(0x2, []byte(fmt.Sprintf("%d:%d",
+						sizeHeight, sizeWidth)))
+				}
+
 			case syscall.SIGTERM, os.Interrupt:
 				removeAllConnections()
 				restoreTerm()
@@ -270,9 +285,7 @@ func apiHandler(w http.ResponseWriter, r *http.Request) {
 
 	parameters := getParameters("/api/action/", r)
 
-	// curl -X GET http://localhost:2201/api/action/enable-ws-stream
-
-	if len(parameters) != 1 {
+	if len(parameters) < 1 {
 		log.Printf("invalid path")
 		errorBadRequest(w)
 		return
@@ -281,6 +294,8 @@ func apiHandler(w http.ResponseWriter, r *http.Request) {
 	cmd := parameters[0]
 	switch cmd {
 	case "enable-ws-stream":
+		// curl -X GET http://localhost:2201/api/action/enable-ws-stream
+
 		wsStreamEnabled = true
 		// send current terminal size
 		sizeWidth, sizeHeight, err := term.GetSize(int(os.Stdin.Fd()))
@@ -289,28 +304,66 @@ func apiHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		sendCommandToAll(0x2, []byte(fmt.Sprintf("%d:%d", sizeHeight, sizeWidth)))
 	case "disable-ws-stream":
+		// curl -X GET http://localhost:2201/api/action/disable-ws-stream
+
 		wsStreamEnabled = false
 	case "get-version":
+		// curl -X GET http://localhost:2201/api/action/get-version
+
 		_, _ = w.Write([]byte(GitTag))
 	case "start-recording":
+		// curl -X GET http://localhost:2201/api/action/start-recording
+
+		if streamRecord {
+			errorBadRequest(w)
+			return
+		}
+		PlaybackFile = fmt.Sprintf("compterm_%s.csv", time.Now().Format("2006-01-02_15-04-05"))
+		pb = playback.New(PlaybackFile)
+		pb.OpenToAppend()
 		streamRecord = true
-		PlaybackFile = fmt.Sprintf("compterm%s.csv", time.Now().Format("2006-01-02_15-04-05"))
 	case "stop-recording":
-		streamRecord = false
-		PlaybackFile = ""
-	case "playback":
-		if len(parameters) != 2 {
+		// curl -X GET http://localhost:2201/api/action/stop-recording
+
+		if !streamRecord {
 			errorBadRequest(w)
 			return
 		}
 		streamRecord = false
+		pb.Close()
+	case "playback":
+		// curl -X GET http://localhost:2201/api/action/playback/2021-08-01_15-04-05.csv
+
+		if streamRecord {
+			log.Printf("error stream record is enabled")
+			errorBadRequest(w)
+			return
+		}
+
+		if len(parameters) != 2 {
+			log.Printf("invalid path")
+			errorBadRequest(w)
+			return
+		}
 		PlaybackFile = parameters[1] // TODO: prevent path traversal attack and check if file exists
-		// TODO: read file and start playback
+
+		// start playback
+		log.Printf("PlaybackFile: %s\n", PlaybackFile)
+
+		pb = playback.New(PlaybackFile)
+		err := pb.Open()
+		if err != nil {
+			log.Printf("error opening playback file: %s\r\n", err)
+			errorBadRequest(w)
+			return
+		}
+
+		go pb.Play(termio)
 	default:
 		errorBadRequest(w)
 		return
 	}
-	_, _ = w.Write([]byte("{status: \"ok\"}"))
+	_, _ = w.Write([]byte("{status: \"ok\"}\n"))
 }
 
 func serveAPI() {
@@ -332,8 +385,6 @@ func serveAPI() {
 
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
-
-	//	wsStreamEnabled = true
 
 	err := config.Load()
 	if err != nil {
