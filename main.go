@@ -32,7 +32,9 @@ var (
 	bs              = byteStream.NewByteStream()
 	ptmx            *os.File
 	wsStreamEnabled bool   // Websocket stream enabled
+	streamRecord    bool   // Websocket stream record
 	GitTag          string = "0.0.0"
+	PlaybackFile    string
 )
 
 func writeAllWS() {
@@ -290,9 +292,25 @@ func apiHandler(w http.ResponseWriter, r *http.Request) {
 		wsStreamEnabled = false
 	case "get-version":
 		_, _ = w.Write([]byte(GitTag))
+	case "start-recording":
+		streamRecord = true
+		PlaybackFile = fmt.Sprintf("compterm%s.csv", time.Now().Format("2006-01-02_15-04-05"))
+	case "stop-recording":
+		streamRecord = false
+		PlaybackFile = ""
+	case "playback":
+		if len(parameters) != 2 {
+			errorBadRequest(w)
+			return
+		}
+		streamRecord = false
+		PlaybackFile = parameters[1] // TODO: prevent path traversal attack and check if file exists
+		// TODO: read file and start playback
 	default:
 		errorBadRequest(w)
+		return
 	}
+	_, _ = w.Write([]byte("{status: \"ok\"}"))
 }
 
 func serveAPI() {
