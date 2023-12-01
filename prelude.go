@@ -1,6 +1,7 @@
 package main
 
 import (
+	"compterm/config"
 	"errors"
 	"io"
 	"net/http"
@@ -60,12 +61,19 @@ func prelude(w http.ResponseWriter, r *http.Request, methods []string, chkAuth b
 		}
 	}
 
+	if chkAuth {
+		key := r.Header.Get("X-API-Key")
+		if key != config.CFG.APIKey {
+			errorUnauthorized(w)
+			return nil, ErrorUnauthorized
+		}
+	}
+
 	if !methodAllowed {
 		errorMethodNotAllowed(w)
 		return nil, ErrorMethodNotAllowed
 	}
 
-	// TODO: check auth
 	// TODO: session management
 
 	b, err := io.ReadAll(r.Body)

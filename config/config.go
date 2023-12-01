@@ -15,6 +15,7 @@ type Config struct {
 	Command      string `json:"command" ini:"command" cfg:"c" cfgHelper:"Command to run default: $SHELL"`
 	MOTD         string `json:"motd" ini:"motd" cfg:"motd" cfgHelper:"Message of the day"`
 	PlaybackFile string `json:"playback_file" ini:"playback_file" cfg:"playback_file" cfgDefault:"out.csv" cfgHelper:"Playback file"`
+	APIKey       string `json:"api_key" init:"api_key" cfg:"api_key" cfgHelper:"API Key"`
 }
 
 var CFG *Config
