@@ -31,7 +31,8 @@ var (
 	connMutex       sync.Mutex
 	bs              = byteStream.NewByteStream()
 	ptmx            *os.File
-	wsStreamEnabled bool // Websocket stream enabled
+	wsStreamEnabled bool   // Websocket stream enabled
+	GitTag          string = "0.0.0"
 )
 
 func writeAllWS() {
