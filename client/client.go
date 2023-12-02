@@ -20,7 +20,7 @@ type Client struct {
 func New(conn *websocket.Conn) *Client {
 	return &Client{
 		bs:          byteStream.NewByteStream(),
-		localBuffer: make([]byte, 8192),
+		localBuffer: make([]byte, 262144),
 		conn:        conn,
 	}
 }

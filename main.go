@@ -40,7 +40,7 @@ var (
 )
 
 func writeAllWS() {
-	msg := make([]byte, 8192)
+	msg := make([]byte, 262144)
 	for {
 		n, err := bs.Read(msg)
 		if err != nil {
@@ -212,7 +212,7 @@ func removeConnection(c *client.Client) {
 
 func readMessages(client *client.Client) {
 	for {
-		buffer := make([]byte, 8192)
+		buffer := make([]byte, 262144)
 		n, err := client.ReadFromWS(buffer)
 		if err != nil {
 			log.Printf("error reading from websocket: %s\r\n", err)
