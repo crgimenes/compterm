@@ -35,8 +35,8 @@
     let progressIndex = 0;
 
     function connectWS() {
-
-        const ws = new WebSocket(`ws://${window.location.host}/ws`);
+        const { host, pathname, protocol } = window.location;
+        const ws = new WebSocket(`${protocol === 'https:' ? 'wss' : 'ws'}://${host}${pathname}/ws`);
         ws.binaryType = 'blob';
 
         ws.onopen = () => terminal.reset();
