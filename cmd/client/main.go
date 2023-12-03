@@ -2,13 +2,13 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"log"
-	"os"
-	"os/signal"
-	"syscall"
+	"strings"
 
-	"golang.org/x/term"
+	"compterm/mterm"
+
 	"nhooyr.io/websocket"
 )
 
@@ -20,31 +20,13 @@ func main() {
 		log.Println(err)
 	}
 	defer c.CloseNow()
+	c.SetReadLimit(-1)
 
-	oldState, err := term.MakeRaw(int(os.Stdin.Fd()))
-	if err != nil {
-		log.Fatalf("error making raw: %s\r\n", err)
-	}
-	restoreTerm := func() {
-		_ = term.Restore(int(os.Stdin.Fd()), oldState)
-	}
-	defer restoreTerm()
+	fmt.Println("\033[2J\033[H")
 
-	ch := make(chan os.Signal, 1)
-	signal.Notify(ch, syscall.SIGTERM, os.Interrupt)
-	go func() {
-		for caux := range ch {
-			switch caux {
-			case syscall.SIGTERM, os.Interrupt:
-				c.Close(websocket.StatusNormalClosure, "")
-				restoreTerm()
-				os.Exit(0)
-			}
-		}
-	}()
-
+	t := mterm.New(24, 80)
 	for {
-		_, data, err := c.Read(context.Background())
+		mt, data, err := c.Read(context.Background())
 		if err != nil {
 			if err == io.EOF {
 				log.Println(">>> EOF")
@@ -57,14 +39,47 @@ func main() {
 			log.Printf("Read error: %v\n", err)
 			break
 		}
+		log.Printf("Message Type = %v, data[0] = %d, len(data) = %d\n",
+			mt,
+			data[0],
+			len(data),
+		)
 
 		// command is the first byte of data
 		command := data[0]
 		switch command {
 		case 0x1:
-			// stdout
-			os.Stdout.Write(data[1:])
+			log.Println("SCREEN:")
+			log.Printf("%q", string(data[1:]))
+
+			if _, err := t.Write(data[1:]); err != nil {
+				// could be ignored
+				if err, ok := err.(mterm.EscapeError); ok {
+					d := data[1:]
+					mm := max(err.Offset-20, 0)
+					mx := min(err.Offset+20, len(d))
+					sub := d[mm:mx]
+
+					off := max(err.Offset-mm, 0)
+
+					quoted := fmt.Sprintf("%q", string(sub))
+					// Hacky way to get the offset considering the escaped escape sequences
+					quotedLoc := fmt.Sprintf("%q", string(sub[:off-2]))
+					log.Fatalf("Error:\n%s\n\033[%dC^ %v\n", quoted, len(quotedLoc), err)
+				}
+			}
+
+			fmt.Printf("\033]0m%s\a", t.Title)
+			fmt.Println("Title: ", t.Title)
+			lines := strings.Split(string(t.DBG()), "\n")
+			for i, line := range lines {
+				fmt.Printf("%02d|%s\033[0m|%02d\n", i, line, i)
+			}
 		case 0x2:
+			var c, l int
+			fmt.Sscanf(string(data[1:]), "%d:%d", &c, &l)
+			// log.Println("Resizing cols:", c, "lines:", l)
+			t.Resize(c, l)
 		// resize
 		default:
 			log.Printf("Unknown command: %v\n", command)
