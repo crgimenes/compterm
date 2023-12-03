@@ -2,27 +2,58 @@ package mterm
 
 import (
 	"bytes"
+	"cmp"
 	"fmt"
-	"log"
 	"reflect"
 	"runtime"
 	"slices"
-	"strconv"
 	"strings"
 	"sync"
 	"unicode"
 	"unicode/utf8"
 )
 
+// Based on: https://www.ditig.com/256-colors-cheat-sheet#list-of-colors
 var color16 = []Color{
 	{0, 0, 0},
-	{205, 0, 0},
-	{0, 205, 0},
-	{205, 205, 0},
-	{0, 0, 238},
-	{205, 0, 205},
-	{0, 205, 205},
-	{229, 229, 229},
+	{128, 0, 0},
+	{0, 128, 0},
+	{128, 128, 0},
+	{0, 0, 128},
+	{128, 0, 128},
+	{0, 128, 128},
+	{192, 192, 192},
+	// Bright
+	{128, 128, 128},
+	{255, 0, 0},
+	{0, 255, 0},
+	{255, 255, 0},
+	{0, 0, 255},
+	{255, 0, 255},
+	{0, 255, 255},
+	{255, 255, 255},
+}
+
+func color256(n byte) Color {
+	cm := []byte{0, 95, 135, 175, 215, 255}
+	switch {
+	case n > 231:
+		n -= 231
+		return Color{
+			8 + 10*n,
+			8 + 10*n,
+			8 + 10*n,
+		}
+	case n > 15:
+		n -= 16
+		return Color{
+			cm[n/36%6],
+			cm[n/6%6],
+			cm[n%6],
+		}
+	default:
+		return color16[n]
+	}
 }
 
 const (
@@ -48,7 +79,10 @@ type cstate struct {
 }
 
 // set the set based on CSI parameters
-func (s *cstate) set(p ...int) {
+func (s *cstate) set(p ...int) error {
+	if len(p) == 0 {
+		*s = cstate{}
+	}
 	for i := 0; i < len(p); i++ {
 		c := p[i]
 		sub := p[i:]
@@ -75,12 +109,12 @@ func (s *cstate) set(p ...int) {
 			s.Flags |= FlagInvisible
 		case c == 9:
 			s.Flags |= FlagStrike
-		case c >= 90 && c <= 97:
+		case c >= 90 && c <= 97: // bright (not bold)
 			s.Flags |= FlagFG
-			s.FG = color16[c-90]
-			s.FG[0] = min(s.FG[0]+50, 255)
-			s.FG[1] = min(s.FG[1]+50, 255)
-			s.FG[2] = min(s.FG[2]+50, 255)
+			s.FG = color16[c-90+8]
+		case c >= 100 && c <= 107: // bright (not bold)
+			s.Flags |= FlagBG
+			s.BG = color16[c-100+8]
 		case c >= 30 && c <= 37:
 			s.Flags |= FlagFG
 			s.FG = color16[c-30]
@@ -91,23 +125,22 @@ func (s *cstate) set(p ...int) {
 			s.BG = color16[c-40]
 		case c == 49:
 			s.Flags &= ^FlagBG
-		// 256 TODO: {lpf} implement a 256 color map
+		// 256 Colors
 		case c == 38 && len(sub) >= 3 && sub[1] == 5:
 			s.Flags |= FlagFG
-			// s.FG = Color256[p[2]]
-			s.FG = Color{255, 255, 255} // color16[7]
+			s.FG = color256(byte(sub[2]))
 			i += 2
+		// 256 Colors
 		case c == 48 && len(sub) >= 3 && sub[1] == 5:
 			s.Flags |= FlagBG
-			// s.BG = Color256[p[2]]
-			s.BG = color16[0]
+			s.BG = color256(byte(sub[2]))
 			i += 2
-		// 16M
+		// 16M Colors
 		case c == 38 && len(sub) >= 5 && sub[1] == 2:
 			s.Flags |= FlagFG
 			s.FG = Color{byte(sub[2]), byte(sub[3]), byte(sub[4])}
 			i += 4
-		// 16M
+		// 16M Colors
 		case c == 48 && len(sub) >= 5 && sub[1] == 2:
 			s.Flags |= FlagBG
 			s.BG = Color{byte(sub[2]), byte(sub[3]), byte(sub[4])}
@@ -121,10 +154,10 @@ func (s *cstate) set(p ...int) {
 			i += 4
 
 		default:
-			log.Printf("Unknown SGR: %v", c)
-			panic("unknown sgr")
+			return fmt.Errorf("unknown SGR: %v", c)
 		}
 	}
+	return nil
 }
 
 type Cell struct {
@@ -132,7 +165,7 @@ type Cell struct {
 	cstate
 }
 
-type stateFn func(t *Terminal, r rune) stateFn
+type stateFn func(t *Terminal, r rune) (stateFn, error)
 
 type Terminal struct {
 	mux    sync.Mutex
@@ -153,7 +186,8 @@ type Terminal struct {
 
 	cellUpdate int
 
-	saveCursor [2]int
+	saveCursor   [2]int
+	scrollRegion [2]int // startRow, endRow
 }
 
 func New(rows, cols int) *Terminal {
@@ -172,7 +206,8 @@ func New(rows, cols int) *Terminal {
 
 		TabSize: 8,
 
-		stateProc: (*Terminal).normal,
+		stateProc:    (*Terminal).normal,
+		scrollRegion: [2]int{0, rows},
 	}
 }
 
@@ -183,24 +218,37 @@ func (t *Terminal) Cells() []Cell {
 	return slices.Clone(t.screen)
 }
 
+type EscapeError struct {
+	Err    error
+	Offset int
+}
+
+func (e EscapeError) Error() string {
+	return fmt.Sprintf("error parsing escape sequence at %d: %v", e.Offset, e.Err)
+}
+
 func (t *Terminal) Write(p []byte) (int, error) {
 	t.mux.Lock()
 	defer t.mux.Unlock()
 
-	l := len(p)
-	for len(p) > 0 {
-		r, sz := utf8.DecodeRune(p)
-		p = p[sz:]
-		t.put(r)
+	for i := 0; i < len(p); {
+		r, sz := utf8.DecodeRune(p[i:])
+		i += sz
+		if err := t.put(r); err != nil {
+			return i, EscapeError{
+				Err:    err,
+				Offset: i,
+			}
+		}
 	}
-	return l, nil
+	return len(p), nil
 }
 
-func (t *Terminal) Put(r rune) {
+func (t *Terminal) Put(r rune) error {
 	t.mux.Lock()
 	defer t.mux.Unlock()
 
-	t.put(r)
+	return t.put(r)
 }
 
 func (t *Terminal) Resize(rows, cols int) {
@@ -212,6 +260,9 @@ func (t *Terminal) Resize(rows, cols int) {
 	t.cursorLine = 0
 	t.cursorCol = 0
 
+	t.saveCursor = [2]int{0, 0}
+	t.scrollRegion = [2]int{0, rows}
+
 	t.screen = make([]Cell, cols*rows)
 }
 
@@ -221,7 +272,7 @@ func (t *Terminal) Clear() {
 
 	t.cursorLine = 0
 	t.cursorCol = 0
-	t.screen = make([]Cell, t.MaxRows*t.MaxCols)
+	fill(t.screen, Cell{})
 }
 
 func (t *Terminal) GetScreenAsAnsi() []byte {
@@ -292,23 +343,30 @@ func (t *Terminal) GetScreenAsAnsi() []byte {
 	return buf.Bytes()
 }
 
-func (t *Terminal) put(r rune) {
+func (t *Terminal) put(r rune) error {
 	// Default to normal stateFn
+
+	// TODO: Figure this out, vim ocasionally sends this in any state!?
+	// probably querying something
+	if r == '\x01' {
+		return nil
+	}
 	sfn := t.stateProc
 	if sfn == nil {
 		sfn = (*Terminal).normal
 	}
 
-	ns := sfn(t, r)
+	ns, err := sfn(t, r)
 	if ns != nil {
 		t.stateProc = ns
 	}
+	return err
 }
 
-func (t *Terminal) normal(r rune) stateFn {
+func (t *Terminal) normal(r rune) (stateFn, error) {
 	switch {
 	case r == '\033':
-		return (*Terminal).esc
+		return (*Terminal).esc, nil
 	case r == '\n':
 		t.cursorCol = 0
 		t.nextLine()
@@ -331,59 +389,65 @@ func (t *Terminal) normal(r rune) stateFn {
 			cstate: t.cstate,
 		}
 		offs := t.cursorCol + t.cursorLine*t.MaxCols
+		if offs >= len(t.screen) {
+			// Rare, but to be safe..
+			return nil, fmt.Errorf("offset out of bounds: %d", offs)
+		}
 		t.screen[offs] = cl
 		// TODO: {lpf} might have issues with erasers
 		t.cursorCol++
 		t.cellUpdate++
 	}
-	return nil
+	return nil, nil
 }
 
-func (t *Terminal) esc(r rune) stateFn {
+func (t *Terminal) esc(r rune) (stateFn, error) {
 	switch r {
 	case '[':
-		return t.csi()
+		return t.csi(), nil
 	case ']':
-		return t.osc()
+		return t.osc(), nil
 	case '>':
 		// TODO: {lpf} (completed by copilot: DEC private mode reset)
 	case '=':
 		// TODO: {lpf} (completed by copilot: DEC private mode set)
 	case '(':
-		return t.ignore(1, (*Terminal).normal) // set G0 charset (ignore next rune and go to normal state)
+		return t.ignore(1, (*Terminal).normal), nil // set G0 charset (ignore next rune and go to normal state)
 	default:
-		panic(fmt.Errorf("unknown escape sequence: %d %[1]c", r))
+		return (*Terminal).normal, fmt.Errorf("unknown escape sequence: %d %[1]c", r)
 	}
-	return (*Terminal).normal
+	return (*Terminal).normal, nil
 }
 
-// State dummy state to accept one char
+// State dummy state to accept any n runes
 func (t *Terminal) ignore(n int, next stateFn) stateFn {
-	return func(*Terminal, rune) stateFn {
+	return func(*Terminal, rune) (stateFn, error) {
 		n--
 		if n <= 0 {
-			return next
+			return next, nil
 		}
-		return nil
+		return nil, nil
 	}
 }
+
+type customSeqFunc func(*Terminal, []rune, bool) (stateFn, error)
 
 // State customSeq is a helper function to create a stateFn that will accept a sequence
 // once the sequence is complete it will call the provided function with bool
 // as true, false otherwise
-func (t *Terminal) customSeq(s []rune, fn func(*Terminal, []rune, bool) stateFn) stateFn {
+func (t *Terminal) customSeq(s []rune, fn customSeqFunc) stateFn {
 	seq := make([]rune, 0, len(s))
-	return func(t *Terminal, r rune) stateFn {
+	return func(t *Terminal, r rune) (stateFn, error) {
+		seq = append(seq, r)
 		if r != s[0] {
 			return fn(t, seq, false)
 		}
-		seq = append(seq, r)
 		s = s[1:]
 		// finished, call the func and return next state
 		if len(s) == 0 {
 			return fn(t, seq, true)
 		}
-		return nil
+		return nil, nil
 	}
 }
 
@@ -392,79 +456,96 @@ func (t *Terminal) osc() stateFn {
 	attrbuf := bytes.NewBuffer(nil)
 	title := &strings.Builder{}
 	var fn stateFn
-	fn = func(_ *Terminal, r rune) stateFn {
+	fn = func(_ *Terminal, r rune) (stateFn, error) {
 		if r == ';' || unicode.IsNumber(r) {
 			attrbuf.WriteRune(r)
-			return nil
+			return nil, nil
 		}
 		switch r {
 		case '\a': // xterm
 			// TODO: Lock t.SetTitle(title.String())
 			t.Title = title.String()
-			return (*Terminal).normal
+			return (*Terminal).normal, nil
 		// Handle string terminator "\033\\"
 		case '\033': // string terminator
-			return t.customSeq([]rune{'\\'}, func(t *Terminal, s []rune, ok bool) stateFn {
+			return t.customSeq([]rune{'\\'}, func(t *Terminal, s []rune, ok bool) (stateFn, error) {
 				if ok {
 					// TODO: Lock
 					t.Title = title.String()
-					return (*Terminal).normal
+					return (*Terminal).normal, nil
 				}
 
 				title.WriteRune('\033')
 				sfn := fn
 				for _, r := range s {
 					// pass unaccepted runes through this state, following the fns
-					if f := sfn(t, r); f != nil {
+					f, err := sfn(t, r)
+					if err != nil {
+						return nil, err
+					}
+					if f != nil {
 						sfn = f
 					}
 				}
-				return sfn
-			})
+				return sfn, nil
+			}), nil
 		default:
 			title.WriteRune(r)
 		}
-		return nil
+		return nil, nil
 	}
 	return fn
 }
 
+// to handle cases like "\033[>P;N..." (cursor keys to application mode)
+func (t *Terminal) csiGT() stateFn {
+	// attrbuf := bytes.NewBuffer(nil)
+	return func(_ *Terminal, r rune) (stateFn, error) {
+		if r == ';' || unicode.IsNumber(r) {
+			// TODO: implement as params
+			// attrbuf.WriteRune(r)
+			return nil, nil
+		}
+		// TODO: no clue, implement if needed (tmux)
+		switch r {
+		case 'm':
+			return (*Terminal).normal, nil
+		case 'c':
+			return (*Terminal).normal, nil
+		case 'q':
+			return (*Terminal).normal, nil
+		default:
+			return (*Terminal).normal, fmt.Errorf("unknown CSI>: %d %[1]c", r)
+		}
+	}
+}
+
 // State Control Sequence Introducer
 func (t *Terminal) csi() stateFn {
-	attrbuf := bytes.NewBuffer(nil)
-
-	mkparam := func() []int {
-		if attrbuf.Len() == 0 {
-			return nil
-		}
-		defer attrbuf.Reset()
-		s := attrbuf.String()
-		ps := strings.FieldsFunc(s, func(r rune) bool {
-			return r == ':' || r == ';'
-		})
-		param := make([]int, len(ps))
-		for i, p := range ps {
-			v, err := strconv.Atoi(p)
-			if err != nil {
-				log.Printf("Error parsing param: %v param:%v", err, s)
-				return nil
+	var p []int
+	nextParam := true
+	return func(t *Terminal, r rune) (stateFn, error) {
+		switch {
+		case r == ':' || r == ';':
+			nextParam = true
+			return nil, nil
+		case unicode.IsNumber(r):
+			if nextParam {
+				nextParam = false
+				p = append(p, 0)
 			}
-			param[i] = v
-		}
-		return param
-	}
-	return func(t *Terminal, r rune) stateFn {
-		if r == ':' || r == ';' || unicode.IsNumber(r) {
-			attrbuf.WriteRune(r)
-			return nil
+			last := len(p) - 1
+			p[last] = p[last]*10 + int(r-'0')
+			return nil, nil
 		}
 
-		p := mkparam()
 		switch r {
 		// for sequences like ESC[?25l (hide cursor)
 		case '?':
-			// maybe set a flag somewhere
-			return nil
+			// maybe set a flag somewhere or use a new state
+			return nil, nil
+		case '>':
+			return t.csiGT(), nil
 		// Cursor movement
 		case 'A': // Cursor UP
 			n := 1
@@ -495,17 +576,16 @@ func (t *Terminal) csi() stateFn {
 		case 'G': // (copilot) Cursor HORIZONTAL ABSOLUTE
 			n := 1
 			getParams(p, &n)
-			t.cursorCol = max(0, min(t.MaxCols-1, n-1))
+			t.cursorCol = clamp(t.MaxCols-1, 0, n-1)
 		case 'H': // Cursor POSITION (col, line)
 			line, col := 1, 1
 			getParams(p, &line, &col)
-			t.cursorCol = max(min(t.MaxCols-1, col-1), 0)
-			t.cursorLine = max(min(t.MaxRows-1, line-1), 0)
+			t.cursorCol = clamp(t.MaxCols-1, 0, col-1)
+			t.cursorLine = clamp(t.MaxRows-1, 0, line-1)
 		case 'd':
 			n := 0
 			getParams(p, &n)
-			t.cursorLine = max(min(t.MaxRows-1, n-1), 0)
-
+			t.cursorLine = clamp(t.MaxRows-1, 0, n-1)
 		// Display erase
 		case 'J': // Erase in Display
 			n := 0
@@ -513,40 +593,30 @@ func (t *Terminal) csi() stateFn {
 			switch n {
 			case 0: // clear from cursor to end
 				off := t.cursorCol + t.cursorLine*t.MaxCols
-				for i := off; i < len(t.screen); i++ {
-					t.screen[i] = Cell{}
-				}
+				fill(t.screen[off:], Cell{cstate: t.cstate})
 				t.cellUpdate++
 			case 1: // clear from beginning to cursor
 				off := t.cursorCol + t.cursorLine*t.MaxCols
-				for i := 0; i < off; i++ {
-					t.screen[i] = Cell{}
-				}
+				fill(t.screen[:off], Cell{cstate: t.cstate})
 				t.cellUpdate++
 			case 2: // clear everything
-				t.screen = make([]Cell, t.MaxCols*t.MaxRows)
+				fill(t.screen, Cell{cstate: t.cstate})
 				t.cellUpdate++
 			}
 		case 'K': // Erase in Line
 			n := 0
 			getParams(p, &n)
-			l := t.cursorLine * t.MaxCols
+			l := clamp(t.cursorLine, 0, t.MaxRows) * t.MaxCols
 			line := t.screen[l : l+t.MaxCols]
 			switch n {
 			case 0: // clear from cursor to end
-				for i := t.cursorCol; i < len(line); i++ {
-					line[i] = Cell{}
-				}
+				fill(line[t.cursorCol:], Cell{cstate: t.cstate})
 				t.cellUpdate++
 			case 1: // clear from beginning to cursor
-				for i := 0; i < t.cursorCol; i++ {
-					line[i] = Cell{}
-				}
+				fill(line[:t.cursorCol], Cell{cstate: t.cstate})
 				t.cellUpdate++
 			case 2: // clear everything
-				for i := range line {
-					line[i] = Cell{}
-				}
+				fill(line, Cell{cstate: t.cstate})
 				t.cellUpdate++
 			}
 		case 'M': // Delete lines, it will move the rest of the lines up
@@ -565,35 +635,36 @@ func (t *Terminal) csi() stateFn {
 			line := t.screen[l : l+t.MaxCols]
 
 			copy(line[t.cursorCol:], line[t.cursorCol+n:])
-			for i := len(line) - n; i < len(line); i++ {
-				line[i] = Cell{}
-			}
+			fill(line[len(line)-n:], Cell{})
 		case 'X': // Erase chars
 			n := 0
 			getParams(p, &n)
 			off := t.cursorCol + t.cursorLine*t.MaxCols
-			for i := off; i < min(off+n, len(t.screen)); i++ {
-				t.screen[i] = Cell{}
-			}
+			end := min(off+n, len(t.screen))
+			fill(t.screen[off:end], Cell{cstate: t.cstate})
 			t.cellUpdate++
 		case 'L': // Insert lines, it will push lines forward
 			n := 1
 			getParams(p, &n)
-			l := max(t.cursorLine-1, 0) * t.MaxCols
-			e := l + n*t.MaxCols
-			dup := slices.Clone(t.screen)
-			for i := l; i < e; i++ {
-				t.screen[i] = Cell{}
-			}
-			copy(t.screen[e:], dup[l:])
+
+			start := t.scrollRegion[0] * t.MaxCols
+			end := t.scrollRegion[1] * t.MaxCols
+			region := t.screen[start:end]
+
+			lr := max(t.cursorLine, 0)
+
+			loff := clamp(lr*t.MaxCols, 0, len(region))
+			eoff := clamp(loff+n*t.MaxCols, 0, len(region))
+			dup := slices.Clone(region)
+			copy(region[eoff:], dup[loff:])
+			fill(region[loff:eoff], Cell{cstate: t.cstate})
 			t.cellUpdate++
 		case '@':
 			// TODO: {lpf} (comment by copilot: Insert blank characters (SP) (default = 1))
 		// SGR
 		case 'm':
-			t.cstate.set(p...)
-		case '>':
-			// TODO: {lpf} (comment by copilot: DECRST)
+			err := t.cstate.set(p...)
+			return (*Terminal).normal, err
 		case 'u':
 			t.cursorLine = t.saveCursor[0]
 			t.cursorCol = t.saveCursor[1]
@@ -608,44 +679,81 @@ func (t *Terminal) csi() stateFn {
 			}
 		case 'l':
 			switch p[0] {
+			case 25: // hide cursor if first rune is '?'
 			case 1:
 				// TODO: Turn cursor keys to application mode OFF
 			}
 		case 't':
 			// TODO: {lpf} (comment by copilot: Window manipulation)
 		case 'r':
-			top, bottom := 0, t.MaxRows
+			top, bottom := 1, t.MaxRows
 			getParams(p, &top, &bottom)
-			// TODO: {lpf} Setup scroll area
+			t.scrollRegion[0] = clamp(top-1, 0, t.MaxRows)
+			t.scrollRegion[1] = clamp(bottom, 0, t.MaxRows)
+			// TODO: this needs some love, it's not working as expected
+			//
+			switch {
+			case len(p) == 0:
+				// fill(t.screen, Cell{})
+				t.cursorLine = 0
+				t.cursorCol = 0
+			case len(p) == 1:
+				t.cursorLine = 0
+				t.cursorCol = 0
+			default:
+				// fill(t.screen, Cell{})
+				// t.cursorLine = 0
+				// t.cursorCol = 0
+			}
+
 		case 'S': // Scrollup
-			// TODO: {lpf} should this have an internal scroll?
+			n := 1
+			getParams(p, &n)
+			start := t.scrollRegion[0] * t.MaxCols
+			end := t.scrollRegion[1] * t.MaxCols
+			region := t.screen[start:end]
+			copy(region, region[n*t.MaxCols:])
+			fill(region[len(region)-n*t.MaxCols:], Cell{})
 		case 'T': // Scrolldown
-			// TODO: {lpf} should this have an internal scroll?
-		case '\x01':
-			// no clue, might have been websocket related issues
+			n := 1
+			getParams(p, &n)
+			start := t.scrollRegion[0] * t.MaxCols
+			end := t.scrollRegion[1] * t.MaxCols
+			region := t.screen[start:end]
+			copy(region[n*t.MaxCols:], region)
+			fill(region[:n*t.MaxCols], Cell{})
 		default:
-			panic(fmt.Errorf("unknown CSI: %d %[1]c", r))
+			return (*Terminal).normal, fmt.Errorf("unknown CSI: %d %[1]c", r)
 
 		}
-		return (*Terminal).normal
+		return (*Terminal).normal, nil
 	}
 }
 
-// TODO: {lpf} deal with scroll area
 func (t *Terminal) nextLine() {
-	if t.cursorLine == t.MaxRows-1 {
-		copy(t.screen, t.screen[t.MaxCols:])
-		for i := len(t.screen) - t.MaxCols; i < len(t.screen); i++ {
-			t.screen[i] = Cell{}
-		}
+	t.cursorLine++
+	if t.cursorLine < t.scrollRegion[1]-1 {
+		return
+	}
+	if t.cursorLine == t.scrollRegion[1] {
+		start := (t.scrollRegion[0]) * t.MaxCols
+		end := t.scrollRegion[1] * t.MaxCols
+		region := t.screen[start:end]
+		// move buffer up 1 line
+		copy(region, region[t.MaxCols:])
+		fill(region[len(region)-t.MaxCols:], Cell{})
+		t.cursorLine--
 		t.cellUpdate++
-	} else {
-		t.cursorLine++
+	}
+	// Replicate odd xterm behaviour of when the cursor is outside of the region
+	// it will not print neither scroll
+	if t.cursorLine == t.MaxRows {
+		t.cursorLine--
 	}
 }
 
 // Updates returns a sequence number that is incremented every time the screen
-// is updated
+// cells are updated
 func (t *Terminal) Updates() int {
 	t.mux.Lock()
 	defer t.mux.Unlock()
@@ -671,7 +779,8 @@ func (t *Terminal) DBG() []byte {
 		if x >= t.MaxCols {
 			y++
 			x = 0
-			fmt.Fprintln(buf) // not needed?!
+			fmt.Fprintln(buf) // new line
+			lastState = cstate{}
 		}
 		c := t.screen[i]
 
@@ -722,7 +831,7 @@ func (t *Terminal) DBG() []byte {
 			r = ' '
 		}
 		if x == t.cursorCol && y == t.cursorLine {
-			fmt.Fprintf(buf, "\033[7m%c\033[0m", r)
+			fmt.Fprintf(buf, "\033[7m%c\033[27m", r)
 			x += 1
 			lastState = cstate{}
 			continue
@@ -743,4 +852,23 @@ func getParams(param []int, out ...*int) {
 		}
 		*out[i] = p
 	}
+}
+
+// fill fills a slice with a value
+func fill[S ~[]T, T any](s S, v T) {
+	for i := range s {
+		s[i] = v
+	}
+}
+
+// clamp returns the value clamped between s and b
+// similar to min(max(value, smallest),biggest)
+func clamp[T cmp.Ordered](v T, s, b T) T {
+	if v < s {
+		return s
+	}
+	if v > b {
+		return b
+	}
+	return v
 }

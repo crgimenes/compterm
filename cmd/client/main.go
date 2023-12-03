@@ -20,12 +20,13 @@ func main() {
 		log.Println(err)
 	}
 	defer c.CloseNow()
+	c.SetReadLimit(-1)
 
 	fmt.Println("\033[2J\033[H")
 
 	t := mterm.New(24, 80)
 	for {
-		_, data, err := c.Read(context.Background())
+		mt, data, err := c.Read(context.Background())
 		if err != nil {
 			if err == io.EOF {
 				log.Println(">>> EOF")
@@ -38,15 +39,35 @@ func main() {
 			log.Printf("Read error: %v\n", err)
 			break
 		}
-		log.Println("Data:", len(data))
+		log.Printf("Message Type = %v, data[0] = %d, len(data) = %d\n",
+			mt,
+			data[0],
+			len(data),
+		)
 
 		// command is the first byte of data
 		command := data[0]
 		switch command {
 		case 0x1:
-			log.Println("\033[2J\033[HSCREEN:")
+			log.Println("SCREEN:")
+			log.Printf("%q", string(data[1:]))
 
-			t.Write(data[1:])
+			if _, err := t.Write(data[1:]); err != nil {
+				// could be ignored
+				if err, ok := err.(mterm.EscapeError); ok {
+					d := data[1:]
+					mm := max(err.Offset-20, 0)
+					mx := min(err.Offset+20, len(d))
+					sub := d[mm:mx]
+
+					off := max(err.Offset-mm, 0)
+
+					quoted := fmt.Sprintf("%q", string(sub))
+					// Hacky way to get the offset considering the escaped escape sequences
+					quotedLoc := fmt.Sprintf("%q", string(sub[:off-2]))
+					log.Fatalf("Error:\n%s\n\033[%dC^ %v\n", quoted, len(quotedLoc), err)
+				}
+			}
 
 			fmt.Printf("\033]0m%s\a", t.Title)
 			fmt.Println("Title: ", t.Title)
@@ -54,7 +75,6 @@ func main() {
 			for i, line := range lines {
 				fmt.Printf("%02d|%s\033[0m|%02d\n", i, line, i)
 			}
-			log.Printf("%q", string(data[1:]))
 		case 0x2:
 			var c, l int
 			fmt.Sscanf(string(data[1:]), "%d:%d", &c, &l)
