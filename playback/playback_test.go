@@ -9,20 +9,25 @@ import (
 func TestRec(t *testing.T) {
 
 	config.Load()
-	config.CFG.PlaybackFile = "out.csv"
 
-	Rec(0x1, []byte("test   1\n"))
-	Rec(0x2, []byte("test \n 2\n"))
-	Rec(0x3, []byte("test ;   3\n"))
-	Rec(0x4, []byte("test      4\n"))
-	Rec(0x5, []byte("test       5\n"))
+	o := New("out.csv")
+	o.OpenToAppend()
 
-	err := Play(os.Stdout)
+	o.Rec(0x1, []byte("test   1\n"))
+	o.Rec(0x2, []byte("test \n 2\n"))
+	o.Rec(0x3, []byte("test ;   3\n"))
+	o.Rec(0x4, []byte("test      4\n"))
+	o.Rec(0x5, []byte("test       5\n"))
+
+	o.Close()
+
+	o.Open()
+	err := o.Play(os.Stdout)
 	if err != nil {
 		t.Errorf("Error: %s", err)
 	} else {
 		// remove out.csv file
-		os.Remove(config.CFG.PlaybackFile)
+		os.Remove("out.csv")
 	}
 
 }
