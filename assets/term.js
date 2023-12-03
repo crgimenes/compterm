@@ -1,4 +1,5 @@
 import { Terminal } from 'xterm';
+import { WebLinksAddon } from '@xterm/addon-web-links';
 
 const termOptions = {
     fontSize: 20,
@@ -29,6 +30,7 @@ const termOptions = {
 };
 
 const terminal = new Terminal(termOptions);
+terminal.loadAddon(new WebLinksAddon());
 terminal.open(document.getElementById('terminal'));
 
 const progress = '/-\\|';
