@@ -37,8 +37,10 @@ const progress = '/-\\|';
 let progressIndex = 0;
 
 function connectWS() {
-    const { host, pathname, protocol } = window.location;
-    const ws = new WebSocket(`${protocol === 'https:' ? 'wss' : 'ws'}://${host}${pathname}/ws`);
+    const { host, pathname: path, protocol: proto } = window.location;
+    const url = `${proto === 'https:' ? 'wss' : 'ws'}://${host}${path === '/' ? '' : path}/ws`
+    const ws = new WebSocket(url);
+    
     ws.binaryType = 'blob';
 
     ws.onopen = () => terminal.reset();
