@@ -15,11 +15,11 @@ import (
 	"time"
 
 	"compterm/assets"
-	"compterm/byteStream"
 	"compterm/client"
 	"compterm/config"
 	"compterm/constants"
 	"compterm/playback"
+	"compterm/stream"
 
 	"github.com/kr/pty"
 	"golang.org/x/term"
@@ -32,7 +32,7 @@ var (
 	termio          = termIO{}
 	clients         []*client.Client
 	connMutex       sync.Mutex
-	bs              = byteStream.NewByteStream()
+	bs              = stream.New()
 	ptmx            *os.File
 	wsStreamEnabled bool   // Websocket stream enabled
 	streamRecord    bool   // Websocket stream record

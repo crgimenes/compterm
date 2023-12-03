@@ -5,14 +5,14 @@ import (
 	"fmt"
 	"log"
 
-	"compterm/byteStream"
 	"compterm/constants"
+	"compterm/stream"
 
 	"nhooyr.io/websocket"
 )
 
 type Client struct {
-	bs          *byteStream.ByteStream
+	bs          *stream.Stream
 	localBuffer []byte
 	conn        *websocket.Conn
 	IP          string
@@ -21,7 +21,7 @@ type Client struct {
 
 func New(conn *websocket.Conn) *Client {
 	return &Client{
-		bs:          byteStream.NewByteStream(),
+		bs:          stream.New(),
 		localBuffer: make([]byte, constants.BufferSize),
 		conn:        conn,
 	}
