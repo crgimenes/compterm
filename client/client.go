@@ -1,10 +1,12 @@
 package client
 
 import (
-	"compterm/byteStream"
 	"context"
 	"fmt"
 	"log"
+
+	"compterm/byteStream"
+	"compterm/constants"
 
 	"nhooyr.io/websocket"
 )
@@ -20,7 +22,7 @@ type Client struct {
 func New(conn *websocket.Conn) *Client {
 	return &Client{
 		bs:          byteStream.NewByteStream(),
-		localBuffer: make([]byte, 262144),
+		localBuffer: make([]byte, constants.BufferSize),
 		conn:        conn,
 	}
 }

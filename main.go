@@ -1,11 +1,6 @@
 package main
 
 import (
-	"compterm/assets"
-	"compterm/byteStream"
-	"compterm/client"
-	"compterm/config"
-	"compterm/playback"
 	"fmt"
 	"io"
 	"log"
@@ -18,6 +13,13 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"compterm/assets"
+	"compterm/byteStream"
+	"compterm/client"
+	"compterm/config"
+	"compterm/constants"
+	"compterm/playback"
 
 	"github.com/kr/pty"
 	"golang.org/x/term"
@@ -40,7 +42,7 @@ var (
 )
 
 func writeAllWS() {
-	msg := make([]byte, 262144)
+	msg := make([]byte, constants.BufferSize)
 	for {
 		n, err := bs.Read(msg)
 		if err != nil {
@@ -212,7 +214,7 @@ func removeConnection(c *client.Client) {
 
 func readMessages(client *client.Client) {
 	for {
-		buffer := make([]byte, 262144)
+		buffer := make([]byte, constants.BufferSize)
 		n, err := client.ReadFromWS(buffer)
 		if err != nil {
 			log.Printf("error reading from websocket: %s\r\n", err)
