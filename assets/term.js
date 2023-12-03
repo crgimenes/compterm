@@ -1,6 +1,10 @@
 import { Terminal } from 'xterm';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 
+
+const MSG = 0x1;
+const RESIZE = 0x2;
+
 const termOptions = {
     fontSize: 20,
     fontFamily: 'terminal,courier-new,courier,monospace',
@@ -51,10 +55,10 @@ function connectWS() {
             const array = new Uint8Array(reader.result);
             const params = array.slice(1);
             switch (array.slice(0, 1)[0]) {
-                case 0x1:
+                case MSG:
                     terminal.write(params);
                     break;
-                case 0x2:
+                case RESIZE:
                     const [cols, rows] = (new TextDecoder().decode(params)).split(':')
                     terminal.resize(+rows, +cols);
                     break

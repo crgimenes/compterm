@@ -1,6 +1,7 @@
 package main
 
 import (
+	"compterm/constants"
 	"context"
 	"io"
 	"log"
@@ -61,10 +62,10 @@ func main() {
 		// command is the first byte of data
 		command := data[0]
 		switch command {
-		case 0x1:
+		case constants.MSG:
 			// stdout
 			os.Stdout.Write(data[1:])
-		case 0x2:
+		case constants.RESIZE:
 		// resize
 		default:
 			log.Printf("Unknown command: %v\n", command)

@@ -87,7 +87,7 @@ func (o termIO) Write(p []byte) (n int, err error) {
 	bs.Write(p)
 
 	if streamRecord {
-		pb.Rec(0x1, p) // TODO: fix magic number
+		pb.Rec(constants.MSG, p)
 	}
 
 	return
@@ -155,9 +155,9 @@ func runCmd() {
 				}
 
 				if streamRecord {
-					pb.Rec(0x1, []byte(fmt.Sprintf("\033[8;%d;%dt",
+					pb.Rec(constants.MSG, []byte(fmt.Sprintf("\033[8;%d;%dt",
 						sizeHeight, sizeWidth)))
-					pb.Rec(0x2, []byte(fmt.Sprintf("%d:%d",
+					pb.Rec(constants.RESIZE, []byte(fmt.Sprintf("%d:%d",
 						sizeHeight, sizeWidth)))
 				}
 

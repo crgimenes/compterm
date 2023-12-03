@@ -28,7 +28,7 @@ func New(conn *websocket.Conn) *Client {
 }
 
 func (c Client) SendMessage(p []byte) (n int, err error) {
-	p = append([]byte{0x1}, p...)
+	p = append([]byte{constants.MSG}, p...)
 	return c.Write(p)
 }
 
