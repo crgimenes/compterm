@@ -32,7 +32,7 @@ var (
 	termio          = termIO{}
 	clients         []*client.Client
 	connMutex       sync.Mutex
-	bs              = stream.New()
+	mainStream      = stream.New()
 	ptmx            *os.File
 	wsStreamEnabled bool   // Websocket stream enabled
 	streamRecord    bool   // Websocket stream record
@@ -44,7 +44,7 @@ var (
 func writeAllWS() {
 	msg := make([]byte, constants.BufferSize)
 	for {
-		n, err := bs.Read(msg)
+		n, err := mainStream.Read(msg)
 		if err != nil {
 			if err == io.EOF {
 				time.Sleep(100 * time.Millisecond)
@@ -84,7 +84,7 @@ func (o termIO) Write(p []byte) (n int, err error) {
 	}
 
 	// write to websocket
-	bs.Write(p)
+	mainStream.Write(p)
 
 	if streamRecord {
 		pb.Rec(constants.MSG, p)
@@ -146,7 +146,7 @@ func runCmd() {
 				if err != nil {
 					log.Fatalf("error getting size: %s\r\n", err)
 				}
-				bs.Write([]byte(fmt.Sprintf("\033[8;%d;%dt",
+				mainStream.Write([]byte(fmt.Sprintf("\033[8;%d;%dt",
 					sizeHeight, sizeWidth)))
 
 				if wsStreamEnabled {
