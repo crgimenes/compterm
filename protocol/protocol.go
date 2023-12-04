@@ -3,7 +3,6 @@ package protocol
 import (
 	"encoding/binary"
 	"fmt"
-	"log"
 )
 
 /*
@@ -50,12 +49,7 @@ func Encode(dest []byte, cmd byte, data []byte) (int, error) {
 	if lenData > MAX_PACKAGE_SIZE {
 		return 0, ErrInvalidSize
 	}
-	if lenData == 0 {
-		log.Printf("lenData == 0")
-		return 0, nil
-	}
 	if len(dest) < lenData+9 {
-		log.Printf("len(dest) < 5+lenData+4")
 		return 0, ErrInvalidSize
 	}
 
@@ -71,7 +65,6 @@ func Encode(dest []byte, cmd byte, data []byte) (int, error) {
 func Decode(src []byte) (cmd byte, data []byte, err error) {
 	// command byte + data length + checksum
 	if len(src) < 9 {
-		log.Println("len(src) < 9")
 		return 0, nil, ErrInvalidSize
 	}
 	lenData := int(binary.BigEndian.Uint32(src[1:]))

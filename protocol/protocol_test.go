@@ -14,8 +14,8 @@ func Test_checksum(t *testing.T) {
 		want uint32
 	}{
 		{"empty", args{[]byte{}}, 2166136261},
-		{"a", args{[]byte{'a'}}, 440920331},
-		{"ab", args{[]byte{'a', 'b'}}, 316363613},
+		{"a", args{[]byte{'a'}}, 3826002220},
+		{"ab", args{[]byte{'a', 'b'}}, 1294271946},
 		{"abc", args{[]byte{'a', 'b', 'c'}}, 440920331},
 		{"abcd", args{[]byte{'a', 'b', 'c', 'd'}}, 3459545533},
 		{"abcde", args{[]byte{'a', 'b', 'c', 'd', 'e'}}, 1956368136},
@@ -102,5 +102,4 @@ func TestEncodeDecode(t *testing.T) {
 	if err != nil {
 		t.Errorf("err = %v, want nil", err)
 	}
-
 }
