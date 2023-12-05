@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"math/rand"
 	"testing"
 )
 
@@ -34,72 +35,168 @@ func TestEncodeDecode(t *testing.T) {
 	in := []byte("hello")
 	out := make([]byte, MAX_PACKAGE_SIZE)
 
-	n, err := Encode(out, 0x01, in)
+	nout, err := Encode(out, in, 0x01)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	cmd, data, err := Decode(out[:n])
+	data := make([]byte, MAX_DATA_SIZE)
+	cmd, n, _, err := Decode(data, out[:nout])
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	t.Log("data:", string(data))
+	t.Log("data:", string(data[:n]))
 
 	if cmd != 0x01 {
 		t.Errorf("cmd = %v, want 0x01", cmd)
 	}
 
-	if string(data) != string(in) {
-		t.Errorf("data = %v, want %v", string(data), string(in))
+	if string(data[:n]) != string(in) {
+		t.Errorf("data = %q, want %q", string(data[:n]), string(in))
 	}
 
 	// test invalid checksum
-	out[5] = 0x00
-	_, _, err = Decode(out[:n])
+	out[7] = 0x00
+	_, _, _, err = Decode(data, out[:nout])
 	if err != ErrInvalidChecksum {
 		t.Errorf("err = %v, want %v", err, ErrInvalidChecksum)
 	}
 
 	// test invalid size
-	_, _, err = Decode(out[:n-1])
+	_, _, _, err = Decode(data, out[:nout-1])
 	if err != ErrInvalidSize {
 		t.Errorf("err = %v, want %v", err, ErrInvalidSize)
 	}
 
 	// test invalid size
-	_, err = Encode(out, 0x01, make([]byte, MAX_DATA_SIZE+1))
+	_, err = Encode(out, make([]byte, MAX_DATA_SIZE+1), 0x01)
 	if err != ErrInvalidSize {
 		t.Errorf("err = %v, want %v", err, ErrInvalidSize)
 	}
 
 	// test invalid size
-	_, err = Encode(out, 0x01, make([]byte, 0))
+	_, err = Encode(out, make([]byte, 0), 0x01)
 	if err != nil {
 		t.Errorf("err = %v, want nil", err)
 	}
 
 	// test invalid size
-	_, err = Encode(out, 0x01, make([]byte, MAX_DATA_SIZE))
+	_, err = Encode(out, make([]byte, MAX_DATA_SIZE), 0x01)
 	if err != nil {
 		t.Errorf("err = %v, want nil", err)
 	}
 
 	// test invalid size
-	_, err = Encode(out, 0x01, make([]byte, MAX_DATA_SIZE-1))
+	_, err = Encode(out, make([]byte, MAX_DATA_SIZE-1), 0x01)
 	if err != nil {
 		t.Errorf("err = %v, want nil", err)
 	}
 
 	// test invalid size
-	_, err = Encode(out, 0x01, make([]byte, 1))
+	_, err = Encode(out, make([]byte, 1), 0x01)
 	if err != nil {
 		t.Errorf("err = %v, want nil", err)
 	}
 
 	// test invalid size
-	_, err = Encode(out, 0x01, make([]byte, 0))
+	_, err = Encode(out, make([]byte, 0), 0x01)
 	if err != nil {
 		t.Errorf("err = %v, want nil", err)
+	}
+
+	// test invalid size
+	_, err = Encode(out, make([]byte, 0), 0x01)
+	if err != nil {
+		t.Errorf("err = %v, want nil", err)
+	}
+
+	// test invalid size
+	_, err = Encode(out, make([]byte, MAX_PACKAGE_SIZE+1), 0x01)
+	if err != ErrInvalidSize {
+		t.Errorf("err = %v, want %v", err, ErrInvalidSize)
+	}
+
+	// decode invalid size
+	_, _, _, err = Decode(data, make([]byte, 1))
+	if err != ErrInvalidSize {
+		t.Errorf("err = %v, want %v", err, ErrInvalidSize)
+	}
+
+	// decode invalid size
+	_, _, _, err = Decode(data, make([]byte, 0))
+	if err != ErrInvalidSize {
+		t.Errorf("err = %v, want %v", err, ErrInvalidSize)
+	}
+
+	data = []byte(randonPayload(100))
+	_, err = Encode(out, data, 0x01)
+	if err != nil {
+		t.Errorf("err = %v, want nil", err)
+	}
+
+	// change size in data to FFFFFFFF
+	out[3] = 0xFF
+	out[4] = 0xFF
+	out[5] = 0xFF
+	out[6] = 0xFF
+	_, _, _, err = Decode(data, out)
+	if err != ErrInvalidSize {
+		t.Errorf("err = %v, want %v", err, ErrInvalidSize)
+	}
+}
+
+func randonPayload(n int) string {
+	ascii := make([]rune, 256)
+	for i := range ascii {
+		ascii[i] = rune(i)
+	}
+
+	b := make([]rune, n)
+	for i := range b {
+		b[i] = ascii[rand.Intn(len(ascii))]
+	}
+	return string(b)
+}
+
+func TestEncodeDecodeLoop(t *testing.T) {
+	count = 0
+	data := make([]byte, MAX_DATA_SIZE)
+	for i := 0; i < 1000; i++ {
+		in := []byte(randonPayload(rand.Intn(10 + i)))
+		out := make([]byte, MAX_PACKAGE_SIZE)
+
+		n, err := Encode(out, in, 0x01)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		cmd, n, counter, err := Decode(data, out[:n])
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if cmd != 0x01 {
+			t.Errorf("cmd = %v, want 0x01", cmd)
+		}
+
+		if string(data[:n]) != string(in) {
+			t.Errorf("data = %v, want %v", string(data), string(in))
+		}
+
+		// test counter
+		if int(counter) != i {
+			t.Errorf("counter = %v, want %v", counter, i)
+		}
+
+		// test checksum
+		if checksum(in) != checksum(data[:n]) {
+			t.Errorf("checksum = %v, want %v", checksum(in), checksum(data))
+		}
+
+		// test size
+		if len(in) != len(data[:n]) {
+			t.Errorf("size = %v, want %v", len(data), len(in))
+		}
 	}
 }
