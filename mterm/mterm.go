@@ -57,8 +57,20 @@ func color256(n byte) Color {
 }
 
 const (
-	FlagFG uint16 = 1 << iota
-	FlagBG
+	// TODO: or maybe pack color types a tiny int to save an extra bit per color
+	// (i.e: 00000000 0000bbff
+	//                      ^^ fg color type 0 to 3
+	//                    ^^ bg color type 0 to 3
+	// fg color type = (Flags & 0b0011)
+	// bg color type = (Flags & 0b1100) >> 2
+
+	FlagFG16 uint16 = 1 << iota
+	FlagFG256
+	FlagFG16M
+	FlagBG16
+	FlagBG256
+	FlagBG16M
+
 	FlagUnderlineColor
 	FlagBold
 	FlagUnderline
@@ -110,39 +122,53 @@ func (s *cstate) set(p ...int) error {
 		case c == 9:
 			s.Flags |= FlagStrike
 		case c >= 90 && c <= 97: // bright (not bold)
-			s.Flags |= FlagFG
-			s.FG = color16[c-90+8]
+			s.Flags &= ^(FlagFG16 | FlagFG256 | FlagFG16M)
+			s.Flags |= FlagFG16
+			s.FG[0] = byte(c)
+			// s.FG = color16[c-90+8]
 		case c >= 100 && c <= 107: // bright (not bold)
-			s.Flags |= FlagBG
-			s.BG = color16[c-100+8]
+			s.Flags &= ^(FlagBG16 | FlagBG256 | FlagBG16M)
+			s.Flags |= FlagBG16
+			s.BG[0] = byte(c)
+			// s.BG = color16[c-100+8]
 		case c >= 30 && c <= 37:
-			s.Flags |= FlagFG
-			s.FG = color16[c-30]
+			s.Flags &= ^(FlagFG16 | FlagFG256 | FlagFG16M)
+			s.Flags |= FlagFG16
+			s.FG[0] = byte(c)
+			// s.FG = color16[c-30]
 		case c == 39: // default foreground
-			s.Flags &= ^FlagFG
-		case c >= 40 && c <= 47:
-			s.Flags |= FlagBG
-			s.BG = color16[c-40]
+			s.Flags &= ^(FlagFG16 | FlagFG256 | FlagFG16M)
+		case c >= 40 && c <= 47: // BG 16 colors
+			s.Flags &= ^(FlagBG16 | FlagBG256 | FlagBG16M)
+			s.Flags |= FlagBG16
+			s.BG[0] = byte(c)
+			// s.BG = color16[c-40]
 		case c == 49:
-			s.Flags &= ^FlagBG
+			s.Flags &= ^(FlagBG16 | FlagBG256 | FlagBG16M)
 		// 256 Colors
 		case c == 38 && len(sub) >= 3 && sub[1] == 5:
-			s.Flags |= FlagFG
-			s.FG = color256(byte(sub[2]))
+			s.Flags &= ^(FlagFG16 | FlagFG256 | FlagFG16M)
+			s.Flags |= FlagFG256
+			s.FG[0] = byte(sub[2])
+			// s.FG = color256(byte(sub[2]))
 			i += 2
 		// 256 Colors
 		case c == 48 && len(sub) >= 3 && sub[1] == 5:
-			s.Flags |= FlagBG
-			s.BG = color256(byte(sub[2]))
+			s.Flags &= ^(FlagBG16 | FlagBG256 | FlagBG16M)
+			s.Flags |= FlagBG256
+			s.BG[0] = byte(sub[2])
+			// s.BG = color256(byte(sub[2]))
 			i += 2
 		// 16M Colors
 		case c == 38 && len(sub) >= 5 && sub[1] == 2:
-			s.Flags |= FlagFG
+			s.Flags &= ^(FlagFG16 | FlagFG256 | FlagFG16M)
+			s.Flags |= FlagFG16M
 			s.FG = Color{byte(sub[2]), byte(sub[3]), byte(sub[4])}
 			i += 4
 		// 16M Colors
 		case c == 48 && len(sub) >= 5 && sub[1] == 2:
-			s.Flags |= FlagBG
+			s.Flags &= ^(FlagBG16 | FlagBG256 | FlagBG16M)
+			s.Flags |= FlagBG16M
 			s.BG = Color{byte(sub[2]), byte(sub[3]), byte(sub[4])}
 			i += 4
 		// XXX: Experimental
@@ -175,8 +201,8 @@ type Terminal struct {
 
 	stateProc stateFn
 
-	cursorLine int
-	cursorCol  int
+	CursorLine int
+	CursorCol  int
 
 	Title   string
 	MaxCols int
@@ -199,8 +225,8 @@ func New(rows, cols int) *Terminal {
 		MaxCols: cols,
 		MaxRows: rows,
 
-		cursorLine: 0,
-		cursorCol:  0,
+		CursorLine: 0,
+		CursorCol:  0,
 
 		screen: screen,
 
@@ -257,8 +283,8 @@ func (t *Terminal) Resize(rows, cols int) {
 
 	t.MaxRows = rows
 	t.MaxCols = cols
-	t.cursorLine = 0
-	t.cursorCol = 0
+	t.CursorLine = 0
+	t.CursorCol = 0
 
 	t.saveCursor = [2]int{0, 0}
 	t.scrollRegion = [2]int{0, rows}
@@ -270,8 +296,8 @@ func (t *Terminal) Clear() {
 	t.mux.Lock()
 	defer t.mux.Unlock()
 
-	t.cursorLine = 0
-	t.cursorCol = 0
+	t.CursorLine = 0
+	t.CursorCol = 0
 	fill(t.screen, Cell{})
 }
 
@@ -291,19 +317,25 @@ func (t *Terminal) GetScreenAsAnsi() []byte {
 		c := t.screen[i]
 		if c.cstate != lastState {
 			lastState = c.cstate
-			codes := []string{"0"}
 			// different state, we shall reset and set the new state
-			if c.Flags&FlagFG != 0 {
-				codes = append(codes,
-					fmt.Sprintf("38;2;%d;%d;%d", c.FG[0], c.FG[1], c.FG[2]),
-				)
+			codes := []string{"0"}
+			if c.Flags&FlagFG16 != 0 {
+				codes = append(codes, fmt.Sprintf("%d", c.FG[0]))
 			}
-			if c.Flags&FlagBG != 0 {
-				if c.BG[0] != 0 || c.BG[1] != 0 || c.BG[2] != 0 {
-					codes = append(codes,
-						fmt.Sprintf("48;2;%d;%d;%d", c.BG[0], c.BG[1], c.BG[2]),
-					)
-				}
+			if c.Flags&FlagFG256 != 0 {
+				codes = append(codes, fmt.Sprintf("38;5;%d", c.FG[0]))
+			}
+			if c.Flags&FlagFG16M != 0 {
+				codes = append(codes, fmt.Sprintf("38;2;%d;%d;%d", c.FG[0], c.FG[1], c.FG[2]))
+			}
+			if c.Flags&FlagBG16 != 0 {
+				codes = append(codes, fmt.Sprintf("%d", c.BG[0]))
+			}
+			if c.Flags&FlagBG256 != 0 {
+				codes = append(codes, fmt.Sprintf("48;5;%d", c.BG[0]))
+			}
+			if c.Flags&FlagBG16M != 0 {
+				codes = append(codes, fmt.Sprintf("48;2;%d;%d;%d", c.BG[0], c.BG[1], c.BG[2]))
 			}
 			if c.Flags&FlagUnderlineColor != 0 {
 				codes = append(codes,
@@ -327,9 +359,6 @@ func (t *Terminal) GetScreenAsAnsi() []byte {
 			}
 			if c.Flags&FlagStrike != 0 {
 				codes = append(codes, "9")
-			}
-			if c.Flags&FlagItalic != 0 {
-				codes = append(codes, "3")
 			}
 			fmt.Fprintf(buf, "\033[%sm", strings.Join(codes, ";"))
 		}
@@ -368,34 +397,34 @@ func (t *Terminal) normal(r rune) (stateFn, error) {
 	case r == '\033':
 		return (*Terminal).esc, nil
 	case r == '\n':
-		t.cursorCol = 0
+		t.CursorCol = 0
 		t.nextLine()
 	case r == '\r':
-		t.cursorCol = 0
+		t.CursorCol = 0
 	case r == '\b':
-		t.cursorCol = max(0, t.cursorCol-1)
+		t.CursorCol = max(0, t.CursorCol-1)
 	case r == '\t':
-		t.cursorCol = (t.cursorCol + t.TabSize) / t.TabSize * t.TabSize
-		t.cursorCol = min(t.cursorCol, t.MaxCols-1)
+		t.CursorCol = (t.CursorCol + t.TabSize) / t.TabSize * t.TabSize
+		t.CursorCol = min(t.CursorCol, t.MaxCols-1)
 	case r < 32: // least printable char, we ignore it
 
 	default:
-		if t.cursorCol >= t.MaxCols {
-			t.cursorCol = 0
+		if t.CursorCol >= t.MaxCols {
+			t.CursorCol = 0
 			t.nextLine()
 		}
 		cl := Cell{
 			Char:   r,
 			cstate: t.cstate,
 		}
-		offs := t.cursorCol + t.cursorLine*t.MaxCols
+		offs := t.CursorCol + t.CursorLine*t.MaxCols
 		if offs >= len(t.screen) {
 			// Rare, but to be safe..
 			return nil, fmt.Errorf("offset out of bounds: %d", offs)
 		}
 		t.screen[offs] = cl
 		// TODO: {lpf} might have issues with erasers
-		t.cursorCol++
+		t.CursorCol++
 		t.cellUpdate++
 	}
 	return nil, nil
@@ -413,6 +442,9 @@ func (t *Terminal) esc(r rune) (stateFn, error) {
 		// TODO: {lpf} (completed by copilot: DEC private mode set)
 	case '(':
 		return t.ignore(1, (*Terminal).normal), nil // set G0 charset (ignore next rune and go to normal state)
+	case 'c':
+		// TODO: should be t.Reset() and reset state
+		t.Clear()
 	default:
 		return (*Terminal).normal, fmt.Errorf("unknown escape sequence: %d %[1]c", r)
 	}
@@ -550,53 +582,53 @@ func (t *Terminal) csi() stateFn {
 		case 'A': // Cursor UP
 			n := 1
 			getParams(p, &n)
-			t.cursorLine = max(0, t.cursorLine-n)
+			t.CursorLine = max(0, t.CursorLine-n)
 		case 'B': // Cursor DOWN
 			n := 1
 			getParams(p, &n)
-			t.cursorLine = min(t.MaxRows-1, t.cursorLine+n)
+			t.CursorLine = min(t.MaxRows-1, t.CursorLine+n)
 		case 'C': // Cursor FORWARD
 			n := 1
 			getParams(p, &n)
-			t.cursorCol = min(t.MaxCols-1, t.cursorCol+n)
+			t.CursorCol = min(t.MaxCols-1, t.CursorCol+n)
 		case 'D': // Cursor BACK
 			n := 1
 			getParams(p, &n)
-			t.cursorCol = max(0, t.cursorCol-n)
+			t.CursorCol = max(0, t.CursorCol-n)
 		case 'E': // (copilot) Moves cursor to beginning of the line n (default 1) lines down.
 			n := 1
 			getParams(p, &n)
-			t.cursorCol = 0
-			t.cursorLine = min(t.MaxRows-1, t.cursorLine+n)
+			t.CursorCol = 0
+			t.CursorLine = min(t.MaxRows-1, t.CursorLine+n)
 		case 'F': // (copilot)  Moves cursor to beginning of the line n (default 1) lines up.
 			n := 1
 			getParams(p, &n)
-			t.cursorCol = 0
-			t.cursorLine = max(0, t.cursorLine-n)
+			t.CursorCol = 0
+			t.CursorLine = max(0, t.CursorLine-n)
 		case 'G': // (copilot) Cursor HORIZONTAL ABSOLUTE
 			n := 1
 			getParams(p, &n)
-			t.cursorCol = clamp(t.MaxCols-1, 0, n-1)
+			t.CursorCol = clamp(t.MaxCols-1, 0, n-1)
 		case 'H': // Cursor POSITION (col, line)
 			line, col := 1, 1
 			getParams(p, &line, &col)
-			t.cursorCol = clamp(t.MaxCols-1, 0, col-1)
-			t.cursorLine = clamp(t.MaxRows-1, 0, line-1)
+			t.CursorCol = clamp(t.MaxCols-1, 0, col-1)
+			t.CursorLine = clamp(t.MaxRows-1, 0, line-1)
 		case 'd':
 			n := 0
 			getParams(p, &n)
-			t.cursorLine = clamp(t.MaxRows-1, 0, n-1)
+			t.CursorLine = clamp(t.MaxRows-1, 0, n-1)
 		// Display erase
 		case 'J': // Erase in Display
 			n := 0
 			getParams(p, &n)
 			switch n {
 			case 0: // clear from cursor to end
-				off := t.cursorCol + t.cursorLine*t.MaxCols
+				off := t.CursorCol + t.CursorLine*t.MaxCols
 				fill(t.screen[off:], Cell{cstate: t.cstate})
 				t.cellUpdate++
 			case 1: // clear from beginning to cursor
-				off := t.cursorCol + t.cursorLine*t.MaxCols
+				off := t.CursorCol + t.CursorLine*t.MaxCols
 				fill(t.screen[:off], Cell{cstate: t.cstate})
 				t.cellUpdate++
 			case 2: // clear everything
@@ -606,14 +638,14 @@ func (t *Terminal) csi() stateFn {
 		case 'K': // Erase in Line
 			n := 0
 			getParams(p, &n)
-			l := clamp(t.cursorLine, 0, t.MaxRows) * t.MaxCols
+			l := clamp(t.CursorLine, 0, t.MaxRows) * t.MaxCols
 			line := t.screen[l : l+t.MaxCols]
 			switch n {
 			case 0: // clear from cursor to end
-				fill(line[t.cursorCol:], Cell{cstate: t.cstate})
+				fill(line[t.CursorCol:], Cell{cstate: t.cstate})
 				t.cellUpdate++
 			case 1: // clear from beginning to cursor
-				fill(line[:t.cursorCol], Cell{cstate: t.cstate})
+				fill(line[:t.CursorCol], Cell{cstate: t.cstate})
 				t.cellUpdate++
 			case 2: // clear everything
 				fill(line, Cell{cstate: t.cstate})
@@ -622,7 +654,7 @@ func (t *Terminal) csi() stateFn {
 		case 'M': // Delete lines, it will move the rest of the lines up
 			n := 1
 			getParams(p, &n)
-			off := t.cursorCol + t.cursorLine*t.MaxCols
+			off := t.CursorCol + t.CursorLine*t.MaxCols
 			copy(t.screen[off:], t.screen[off+n*t.MaxCols:])
 			for i := len(t.screen) - n*t.MaxCols; i < len(t.screen); i++ {
 				t.screen[i] = Cell{}
@@ -631,15 +663,15 @@ func (t *Terminal) csi() stateFn {
 		case 'P': // Delete chars in line it will move the rest of the line to the left
 			n := 1
 			getParams(p, &n)
-			l := t.cursorLine * t.MaxCols
+			l := t.CursorLine * t.MaxCols
 			line := t.screen[l : l+t.MaxCols]
 
-			copy(line[t.cursorCol:], line[t.cursorCol+n:])
+			copy(line[t.CursorCol:], line[t.CursorCol+n:])
 			fill(line[len(line)-n:], Cell{})
 		case 'X': // Erase chars
 			n := 0
 			getParams(p, &n)
-			off := t.cursorCol + t.cursorLine*t.MaxCols
+			off := t.CursorCol + t.CursorLine*t.MaxCols
 			end := min(off+n, len(t.screen))
 			fill(t.screen[off:end], Cell{cstate: t.cstate})
 			t.cellUpdate++
@@ -651,7 +683,7 @@ func (t *Terminal) csi() stateFn {
 			end := t.scrollRegion[1] * t.MaxCols
 			region := t.screen[start:end]
 
-			lr := max(t.cursorLine, 0)
+			lr := max(t.CursorLine, 0)
 
 			loff := clamp(lr*t.MaxCols, 0, len(region))
 			eoff := clamp(loff+n*t.MaxCols, 0, len(region))
@@ -666,10 +698,10 @@ func (t *Terminal) csi() stateFn {
 			err := t.cstate.set(p...)
 			return (*Terminal).normal, err
 		case 'u':
-			t.cursorLine = t.saveCursor[0]
-			t.cursorCol = t.saveCursor[1]
+			t.CursorLine = t.saveCursor[0]
+			t.CursorCol = t.saveCursor[1]
 		case 's':
-			t.saveCursor = [2]int{t.cursorLine, t.cursorCol}
+			t.saveCursor = [2]int{t.CursorLine, t.CursorCol}
 		case 'c':
 			// TODO: {lpf} (comment by copilot: Send device attributes)
 		case 'h':
@@ -695,11 +727,11 @@ func (t *Terminal) csi() stateFn {
 			switch {
 			case len(p) == 0:
 				// fill(t.screen, Cell{})
-				t.cursorLine = 0
-				t.cursorCol = 0
+				t.CursorLine = 0
+				t.CursorCol = 0
 			case len(p) == 1:
-				t.cursorLine = 0
-				t.cursorCol = 0
+				t.CursorLine = 0
+				t.CursorCol = 0
 			default:
 				// fill(t.screen, Cell{})
 				// t.cursorLine = 0
@@ -731,24 +763,24 @@ func (t *Terminal) csi() stateFn {
 }
 
 func (t *Terminal) nextLine() {
-	t.cursorLine++
-	if t.cursorLine < t.scrollRegion[1]-1 {
+	t.CursorLine++
+	if t.CursorLine < t.scrollRegion[1]-1 {
 		return
 	}
-	if t.cursorLine == t.scrollRegion[1] {
+	if t.CursorLine == t.scrollRegion[1] {
 		start := (t.scrollRegion[0]) * t.MaxCols
 		end := t.scrollRegion[1] * t.MaxCols
 		region := t.screen[start:end]
 		// move buffer up 1 line
 		copy(region, region[t.MaxCols:])
 		fill(region[len(region)-t.MaxCols:], Cell{})
-		t.cursorLine--
+		t.CursorLine--
 		t.cellUpdate++
 	}
 	// Replicate odd xterm behaviour of when the cursor is outside of the region
 	// it will not print neither scroll
-	if t.cursorLine == t.MaxRows {
-		t.cursorLine--
+	if t.CursorLine == t.MaxRows {
+		t.CursorLine--
 	}
 }
 
@@ -788,17 +820,23 @@ func (t *Terminal) DBG() []byte {
 			lastState = c.cstate
 			// different state, we shall reset and set the new state
 			codes := []string{"0"}
-			if c.Flags&FlagFG != 0 {
-				codes = append(codes,
-					fmt.Sprintf("38;2;%d;%d;%d", c.FG[0], c.FG[1], c.FG[2]),
-				)
+			if c.Flags&FlagFG16 != 0 {
+				codes = append(codes, fmt.Sprintf("%d", c.FG[0]))
 			}
-			if c.Flags&FlagBG != 0 {
-				if c.BG[0] != 0 || c.BG[1] != 0 || c.BG[2] != 0 {
-					codes = append(codes,
-						fmt.Sprintf("48;2;%d;%d;%d", c.BG[0], c.BG[1], c.BG[2]),
-					)
-				}
+			if c.Flags&FlagFG256 != 0 {
+				codes = append(codes, fmt.Sprintf("38;5;%d", c.FG[0]))
+			}
+			if c.Flags&FlagFG16M != 0 {
+				codes = append(codes, fmt.Sprintf("38;2;%d;%d;%d", c.FG[0], c.FG[1], c.FG[2]))
+			}
+			if c.Flags&FlagBG16 != 0 {
+				codes = append(codes, fmt.Sprintf("%d", c.BG[0]))
+			}
+			if c.Flags&FlagBG256 != 0 {
+				codes = append(codes, fmt.Sprintf("48;5;%d", c.BG[0]))
+			}
+			if c.Flags&FlagBG16M != 0 {
+				codes = append(codes, fmt.Sprintf("48;2;%d;%d;%d", c.BG[0], c.BG[1], c.BG[2]))
 			}
 			if c.Flags&FlagUnderlineColor != 0 {
 				codes = append(codes,
@@ -830,7 +868,7 @@ func (t *Terminal) DBG() []byte {
 		if r == 0 {
 			r = ' '
 		}
-		if x == t.cursorCol && y == t.cursorLine {
+		if x == t.CursorCol && y == t.CursorLine {
 			fmt.Fprintf(buf, "\033[7m%c\033[27m", r)
 			x += 1
 			lastState = cstate{}

@@ -25,12 +25,12 @@ func TestTerminal_Write(t *testing.T) {
 	// t.Logf("cursorLine: %d", tr.cursorLine)
 	// t.Logf("cursorCol: %d", tr.cursorCol)
 
-	if tr.cursorLine != 0 {
-		t.Errorf("Terminal.cursorLine = %v, want %v", tr.cursorLine, 0)
+	if tr.CursorLine != 0 {
+		t.Errorf("Terminal.cursorLine = %v, want %v", tr.CursorLine, 0)
 	}
 
-	if tr.cursorCol != len(p) {
-		t.Errorf("Terminal.cursorCol = %v, want %v", tr.cursorCol, len(p))
+	if tr.CursorCol != len(p) {
+		t.Errorf("Terminal.cursorCol = %v, want %v", tr.CursorCol, len(p))
 	}
 
 	if strings.TrimSpace(string(s)) != string(p) {
