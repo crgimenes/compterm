@@ -15,12 +15,12 @@ Where:
 
 A: command byte
 B: conter (2 bytes, big endian) optional used to debug and validate package order
-C: data length (32 bits, big endian)
-D: data (array of bytes)
+C: payload length (32 bits, big endian)
+D: payload (array of bytes)
 F: checksum (FNV-1a, 32 bits, big endian)
 
 The checksum is calculated over the command
-byte, the data length and the data itself.
+byte, conter, payload length and the data itself.
 */
 
 const (
