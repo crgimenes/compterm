@@ -1,12 +1,8 @@
-// Description: protocol package implements a simple protocol for
+// Protocol package implements a simple protocol for
 // sending and receiving data.
 //
-// # Protocol format
-//
-// # ABBCCCCDDD...DDDFFFF
-//
+// Protocol format: ABBCCCCDDD...DDDFFFF
 // Where:
-//
 // A: command byte
 // B: counter (2 bytes, big endian) optional used to debug and validate package order
 // C: payload length (32 bits, big endian)
