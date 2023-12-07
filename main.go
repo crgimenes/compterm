@@ -18,7 +18,6 @@ import (
 	"compterm/client"
 	"compterm/config"
 	"compterm/constants"
-	"compterm/playback"
 	"compterm/stream"
 
 	"github.com/kr/pty"
@@ -35,10 +34,7 @@ var (
 	mainStream      = stream.New()
 	ptmx            *os.File
 	wsStreamEnabled bool   // Websocket stream enabled
-	streamRecord    bool   // Websocket stream record
 	GitTag          string = "0.0.0v"
-	PlaybackFile    string
-	pb              *playback.Playback
 )
 
 func writeAllWS() {
@@ -85,10 +81,6 @@ func (o termIO) Write(p []byte) (n int, err error) {
 
 	// write to websocket
 	mainStream.Write(p)
-
-	if streamRecord {
-		pb.Rec(constants.MSG, p)
-	}
 
 	return
 }
@@ -151,13 +143,6 @@ func runCmd() {
 
 				if wsStreamEnabled {
 					sendCommandToAll(0x2, []byte(fmt.Sprintf("%d:%d",
-						sizeHeight, sizeWidth)))
-				}
-
-				if streamRecord {
-					pb.Rec(constants.MSG, []byte(fmt.Sprintf("\033[8;%d;%dt",
-						sizeHeight, sizeWidth)))
-					pb.Rec(constants.RESIZE, []byte(fmt.Sprintf("%d:%d",
 						sizeHeight, sizeWidth)))
 				}
 
@@ -313,54 +298,6 @@ func apiHandler(w http.ResponseWriter, r *http.Request) {
 		// curl -X GET http://localhost:2201/api/action/get-version
 
 		_, _ = w.Write([]byte(GitTag))
-	case "start-recording":
-		// curl -X GET http://localhost:2201/api/action/start-recording
-
-		if streamRecord {
-			errorBadRequest(w)
-			return
-		}
-		PlaybackFile = fmt.Sprintf("compterm_%s.csv", time.Now().Format("2006-01-02_15-04-05"))
-		pb = playback.New(PlaybackFile)
-		pb.OpenToAppend()
-		streamRecord = true
-	case "stop-recording":
-		// curl -X GET http://localhost:2201/api/action/stop-recording
-
-		if !streamRecord {
-			errorBadRequest(w)
-			return
-		}
-		streamRecord = false
-		pb.Close()
-	case "playback":
-		// curl -X GET http://localhost:2201/api/action/playback/2021-08-01_15-04-05.csv
-
-		if streamRecord {
-			log.Printf("error stream record is enabled")
-			errorBadRequest(w)
-			return
-		}
-
-		if len(parameters) != 2 {
-			log.Printf("invalid path")
-			errorBadRequest(w)
-			return
-		}
-		PlaybackFile = parameters[1] // TODO: prevent path traversal attack and check if file exists
-
-		// start playback
-		log.Printf("PlaybackFile: %s\n", PlaybackFile)
-
-		pb = playback.New(PlaybackFile)
-		err := pb.Open()
-		if err != nil {
-			log.Printf("error opening playback file: %s\r\n", err)
-			errorBadRequest(w)
-			return
-		}
-
-		go pb.Play(termio)
 	default:
 		errorBadRequest(w)
 		return
