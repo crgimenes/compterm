@@ -28,8 +28,7 @@ func New(conn *websocket.Conn) *Client {
 }
 
 func (c Client) SendMessage(p []byte) (n int, err error) {
-	p = append([]byte{constants.MSG}, p...)
-	return c.Write(p)
+	return c.SendCommand(constants.MSG, p)
 }
 
 func (c Client) ResizeTerminal(rows, cols int) (n int, err error) {

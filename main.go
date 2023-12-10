@@ -61,7 +61,6 @@ func writeAllWS() {
 			if err != nil {
 				log.Printf("error writing to websocket: %s\r\n", err)
 				removeConnection(c)
-				connMutex.Unlock()
 			}
 		}
 		connMutex.Unlock()
@@ -93,7 +92,6 @@ func sendCommandToAll(command byte, params []byte) {
 		if err != nil {
 			log.Printf("error writing to websocket: %s\r\n", err)
 			removeConnection(c)
-			connMutex.Unlock()
 		}
 	}
 	connMutex.Unlock()
@@ -173,8 +171,6 @@ func runCmd() {
 
 func removeAllConnections() {
 	connMutex.Lock()
-	defer connMutex.Unlock()
-
 	for _, c := range clients {
 		err := c.Close()
 		if err != nil {
@@ -182,12 +178,11 @@ func removeAllConnections() {
 		}
 	}
 	clients = nil
+	connMutex.Unlock()
 }
 
 func removeConnection(c *client.Client) {
 	connMutex.Lock()
-	defer connMutex.Unlock()
-
 	for i, client := range clients {
 		if client == c {
 			client.Close()
@@ -195,6 +190,7 @@ func removeConnection(c *client.Client) {
 			break
 		}
 	}
+	connMutex.Unlock()
 }
 
 func readMessages(client *client.Client) {
