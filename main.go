@@ -320,6 +320,8 @@ func serveAPI() {
 
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
+	logFile, _ := os.Create("log.txt")
+	log.SetOutput(logFile)
 
 	err := config.Load()
 	if err != nil {

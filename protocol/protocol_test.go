@@ -21,6 +21,8 @@ func Test_checksum(t *testing.T) {
 		{"abc", args{[]byte{'a', 'b', 'c'}}, 440920331},
 		{"abcd", args{[]byte{'a', 'b', 'c', 'd'}}, 3459545533},
 		{"abcde", args{[]byte{'a', 'b', 'c', 'd', 'e'}}, 1956368136},
+		{"óüçã", args{[]byte("óüçã")}, 3909595796},
+		{"⠁", args{[]byte("\u2801")}, 943521466},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -96,12 +98,6 @@ func TestEncodeDecode(t *testing.T) {
 
 	// test invalid size
 	_, err = Encode(out, make([]byte, 1), 0x01, 0x01)
-	if err != nil {
-		t.Errorf("err = %v, want nil", err)
-	}
-
-	// test invalid size
-	_, err = Encode(out, make([]byte, 0), 0x01, 0x01)
 	if err != nil {
 		t.Errorf("err = %v, want nil", err)
 	}

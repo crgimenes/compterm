@@ -52,8 +52,11 @@ function connectWS() {
     ws.onmessage = ({ data }) => {
         const reader = new FileReader();
         reader.onload = () => {
+            const offset = 7; // prefix from protocol
             const array = new Uint8Array(reader.result);
-            const params = array.slice(1);
+            const payloadLength = (new DataView(array.slice(3, 7).buffer)).getUint32();
+            const params = array.slice(offset, offset + payloadLength);
+            console.log(params);
             switch (array.slice(0, 1)[0]) {
                 case MSG:
                     terminal.write(params);

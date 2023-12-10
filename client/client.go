@@ -6,6 +6,7 @@ import (
 	"log"
 
 	"compterm/constants"
+	"compterm/protocol"
 	"compterm/stream"
 
 	"nhooyr.io/websocket"
@@ -36,7 +37,14 @@ func (c Client) ResizeTerminal(rows, cols int) (n int, err error) {
 }
 
 func (c *Client) SendCommand(prefix byte, p []byte) (n int, err error) {
-	return c.bs.Write(append([]byte{prefix}, p...))
+	buf := make([]byte, protocol.MAX_DATA_SIZE)
+	n, err = protocol.Encode(buf, p, prefix, 0)
+	if err != nil {
+		log.Println(err)
+		return 0, err
+	}
+
+	return c.bs.Write(buf[:n])
 }
 
 func (c *Client) Write(p []byte) (n int, err error) {
