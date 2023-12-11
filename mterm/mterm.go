@@ -57,37 +57,30 @@ func color256(n byte) Color {
 }
 
 const (
-	// TODO: or maybe pack color types a tiny int to save an extra bit per color
-	// (i.e: 00000000 0000bbff
-	//                      ^^ fg color type 0 to 3
-	//                    ^^ bg color type 0 to 3
-	// fg color type = (Flags & 0b0011)
-	// bg color type = (Flags & 0b1100) >> 2
+	Color16  = 1
+	Color256 = 2
+	Color16M = 3
+)
 
-	FlagFG16 uint16 = 1 << iota
-	FlagFG256
-	FlagFG16M
-	FlagBG16
-	FlagBG256
-	FlagBG16M
-
-	FlagUnderlineColor
-	FlagBold
+const (
+	FlagBold uint8 = 1 << iota
 	FlagUnderline
 	FlagBlink
 	FlagInverse
 	FlagInvisible
 	FlagStrike
 	FlagItalic
+	FlagUnderlineColor
 )
 
 type Color [3]byte
 
 type cstate struct {
-	FG    Color
-	BG    Color
-	UL    Color // underline color
-	Flags uint16
+	FG        Color
+	BG        Color
+	UL        Color // underline color
+	ColorType uint8
+	Flags     uint8
 }
 
 // set the set based on CSI parameters
@@ -100,7 +93,7 @@ func (s *cstate) set(p ...int) error {
 		sub := p[i:]
 		switch {
 		case c == 0:
-			s.Flags = 0
+			*s = cstate{}
 		case c == 1:
 			s.Flags |= FlagBold
 		case c == 22:
@@ -121,54 +114,40 @@ func (s *cstate) set(p ...int) error {
 			s.Flags |= FlagInvisible
 		case c == 9:
 			s.Flags |= FlagStrike
-		case c >= 90 && c <= 97: // bright (not bold)
-			s.Flags &= ^(FlagFG16 | FlagFG256 | FlagFG16M)
-			s.Flags |= FlagFG16
+		case c >= 90 && c <= 97: // FG bright (not bold)
+			s.ColorType = s.ColorType&0b1100 | Color16
 			s.FG[0] = byte(c)
-			// s.FG = color16[c-90+8]
-		case c >= 100 && c <= 107: // bright (not bold)
-			s.Flags &= ^(FlagBG16 | FlagBG256 | FlagBG16M)
-			s.Flags |= FlagBG16
+		case c >= 100 && c <= 107: // BG bright (not bold)
+			s.ColorType = s.ColorType&0b0011 | (Color16 << 2)
 			s.BG[0] = byte(c)
-			// s.BG = color16[c-100+8]
-		case c >= 30 && c <= 37:
-			s.Flags &= ^(FlagFG16 | FlagFG256 | FlagFG16M)
-			s.Flags |= FlagFG16
+		case c >= 30 && c <= 37: // FG
+			s.ColorType = s.ColorType&0b1100 | Color16
 			s.FG[0] = byte(c)
-			// s.FG = color16[c-30]
-		case c == 39: // default foreground
-			s.Flags &= ^(FlagFG16 | FlagFG256 | FlagFG16M)
+		case c == 39: // FG default foreground
+			s.ColorType &= 0b1100
 		case c >= 40 && c <= 47: // BG 16 colors
-			s.Flags &= ^(FlagBG16 | FlagBG256 | FlagBG16M)
-			s.Flags |= FlagBG16
+			s.ColorType = s.ColorType&0b0011 | (Color16 << 2)
 			s.BG[0] = byte(c)
-			// s.BG = color16[c-40]
-		case c == 49:
-			s.Flags &= ^(FlagBG16 | FlagBG256 | FlagBG16M)
-		// 256 Colors
+		case c == 49: // BG default background
+			s.ColorType &= 0b0011
+		// FG 256 Colors
 		case c == 38 && len(sub) >= 3 && sub[1] == 5:
-			s.Flags &= ^(FlagFG16 | FlagFG256 | FlagFG16M)
-			s.Flags |= FlagFG256
+			s.ColorType = s.ColorType&0b1100 | Color256
 			s.FG[0] = byte(sub[2])
-			// s.FG = color256(byte(sub[2]))
 			i += 2
-		// 256 Colors
+		// BG 256 Colors
 		case c == 48 && len(sub) >= 3 && sub[1] == 5:
-			s.Flags &= ^(FlagBG16 | FlagBG256 | FlagBG16M)
-			s.Flags |= FlagBG256
+			s.ColorType = s.ColorType&0b0011 | (Color256 << 2)
 			s.BG[0] = byte(sub[2])
-			// s.BG = color256(byte(sub[2]))
 			i += 2
-		// 16M Colors
+		// FG 16M Colors
 		case c == 38 && len(sub) >= 5 && sub[1] == 2:
-			s.Flags &= ^(FlagFG16 | FlagFG256 | FlagFG16M)
-			s.Flags |= FlagFG16M
+			s.ColorType = s.ColorType&0b1100 | Color16M
 			s.FG = Color{byte(sub[2]), byte(sub[3]), byte(sub[4])}
 			i += 4
-		// 16M Colors
+		// BG 16M Colors
 		case c == 48 && len(sub) >= 5 && sub[1] == 2:
-			s.Flags &= ^(FlagBG16 | FlagBG256 | FlagBG16M)
-			s.Flags |= FlagBG16M
+			s.ColorType = s.ColorType&0b0011 | (Color16M << 2)
 			s.BG = Color{byte(sub[2]), byte(sub[3]), byte(sub[4])}
 			i += 4
 		// XXX: Experimental
@@ -186,6 +165,7 @@ func (s *cstate) set(p ...int) error {
 	return nil
 }
 
+// Cell is a single cell in the terminal
 type Cell struct {
 	Char rune
 	cstate
@@ -193,6 +173,7 @@ type Cell struct {
 
 type stateFn func(t *Terminal, r rune) (stateFn, error)
 
+// Terminal is an in memory terminal emulator
 type Terminal struct {
 	mux    sync.Mutex
 	screen []Cell
@@ -216,6 +197,7 @@ type Terminal struct {
 	scrollRegion [2]int // startRow, endRow
 }
 
+// New returns a new terminal with the given rows and cols
 func New(rows, cols int) *Terminal {
 	screen := make([]Cell, rows*cols)
 	for i := range screen {
@@ -237,6 +219,7 @@ func New(rows, cols int) *Terminal {
 	}
 }
 
+// Cells returns a copy of the underlying screen cells
 func (t *Terminal) Cells() []Cell {
 	t.mux.Lock()
 	defer t.mux.Unlock()
@@ -253,6 +236,7 @@ func (e EscapeError) Error() string {
 	return fmt.Sprintf("error parsing escape sequence at %d: %v", e.Offset, e.Err)
 }
 
+// Write implements io.Writer and writes the given bytes to the terminal
 func (t *Terminal) Write(p []byte) (int, error) {
 	t.mux.Lock()
 	defer t.mux.Unlock()
@@ -270,6 +254,7 @@ func (t *Terminal) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
+// Put processes a single rune in the terminal
 func (t *Terminal) Put(r rune) error {
 	t.mux.Lock()
 	defer t.mux.Unlock()
@@ -277,6 +262,7 @@ func (t *Terminal) Put(r rune) error {
 	return t.put(r)
 }
 
+// Reset resizes and resets the terminal to the default state
 func (t *Terminal) Resize(rows, cols int) {
 	t.mux.Lock()
 	defer t.mux.Unlock()
@@ -292,6 +278,7 @@ func (t *Terminal) Resize(rows, cols int) {
 	t.screen = make([]Cell, cols*rows)
 }
 
+// Clear clears the terminal moving cursor to 0,0
 func (t *Terminal) Clear() {
 	t.mux.Lock()
 	defer t.mux.Unlock()
@@ -313,31 +300,30 @@ func (t *Terminal) GetScreenAsAnsi() []byte {
 			y++
 			x = 0
 			// return to beginning of line
-			buf.WriteByte('\r')
-			fmt.Fprintln(buf) // not needed?!
+			buf.WriteString("\r\n")
 		}
 		c := t.screen[i]
 		if c.cstate != lastState {
 			lastState = c.cstate
 			// different state, we shall reset and set the new state
 			codes := []string{"0"}
-			if c.Flags&FlagFG16 != 0 {
+
+			switch c.ColorType & 0b11 {
+			case Color16:
 				codes = append(codes, fmt.Sprintf("%d", c.FG[0]))
-			}
-			if c.Flags&FlagFG256 != 0 {
+			case Color256:
 				codes = append(codes, fmt.Sprintf("38;5;%d", c.FG[0]))
-			}
-			if c.Flags&FlagFG16M != 0 {
+			case Color16M:
 				codes = append(codes, fmt.Sprintf("38;2;%d;%d;%d", c.FG[0], c.FG[1], c.FG[2]))
 			}
-			if c.Flags&FlagBG16 != 0 {
+			switch (c.ColorType >> 2) & 0b11 {
+			case Color16:
 				codes = append(codes, fmt.Sprintf("%d", c.BG[0]))
-			}
-			if c.Flags&FlagBG256 != 0 {
+			case Color256:
 				codes = append(codes, fmt.Sprintf("48;5;%d", c.BG[0]))
-			}
-			if c.Flags&FlagBG16M != 0 {
+			case Color16M:
 				codes = append(codes, fmt.Sprintf("48;2;%d;%d;%d", c.BG[0], c.BG[1], c.BG[2]))
+
 			}
 			if c.Flags&FlagUnderlineColor != 0 {
 				codes = append(codes,
@@ -610,16 +596,16 @@ func (t *Terminal) csi() stateFn {
 		case 'G': // (copilot) Cursor HORIZONTAL ABSOLUTE
 			n := 1
 			getParams(p, &n)
-			t.CursorCol = clamp(t.MaxCols-1, 0, n-1)
+			t.CursorCol = clamp(n-1, 0, t.MaxCols-1)
 		case 'H': // Cursor POSITION (col, line)
 			line, col := 1, 1
 			getParams(p, &line, &col)
-			t.CursorCol = clamp(t.MaxCols-1, 0, col-1)
-			t.CursorLine = clamp(t.MaxRows-1, 0, line-1)
+			t.CursorCol = clamp(col-1, 0, t.MaxCols-1)
+			t.CursorLine = clamp(line-1, 0, t.MaxRows-1)
 		case 'd':
 			n := 0
 			getParams(p, &n)
-			t.CursorLine = clamp(t.MaxRows-1, 0, n-1)
+			t.CursorLine = clamp(n-1, 0, t.MaxRows-1)
 		// Display erase
 		case 'J': // Erase in Display
 			n := 0
@@ -658,9 +644,7 @@ func (t *Terminal) csi() stateFn {
 			getParams(p, &n)
 			off := t.CursorCol + t.CursorLine*t.MaxCols
 			copy(t.screen[off:], t.screen[off+n*t.MaxCols:])
-			for i := len(t.screen) - n*t.MaxCols; i < len(t.screen); i++ {
-				t.screen[i] = Cell{}
-			}
+			fill(t.screen[len(t.screen)-n*t.MaxCols:], Cell{})
 			t.cellUpdate++
 		case 'P': // Delete chars in line it will move the rest of the line to the left
 			n := 1
@@ -813,7 +797,7 @@ func (t *Terminal) DBG() []byte {
 		if x >= t.MaxCols {
 			y++
 			x = 0
-			fmt.Fprintln(buf) // new line
+			buf.WriteString("\r\n")
 			lastState = cstate{}
 		}
 		c := t.screen[i]
@@ -822,24 +806,24 @@ func (t *Terminal) DBG() []byte {
 			lastState = c.cstate
 			// different state, we shall reset and set the new state
 			codes := []string{"0"}
-			if c.Flags&FlagFG16 != 0 {
+			switch c.ColorType & 0b11 {
+			case Color16:
 				codes = append(codes, fmt.Sprintf("%d", c.FG[0]))
-			}
-			if c.Flags&FlagFG256 != 0 {
+			case Color256:
 				codes = append(codes, fmt.Sprintf("38;5;%d", c.FG[0]))
-			}
-			if c.Flags&FlagFG16M != 0 {
+			case Color16M:
 				codes = append(codes, fmt.Sprintf("38;2;%d;%d;%d", c.FG[0], c.FG[1], c.FG[2]))
 			}
-			if c.Flags&FlagBG16 != 0 {
+			switch (c.ColorType >> 2) & 0b11 {
+			case Color16:
 				codes = append(codes, fmt.Sprintf("%d", c.BG[0]))
-			}
-			if c.Flags&FlagBG256 != 0 {
+			case Color256:
 				codes = append(codes, fmt.Sprintf("48;5;%d", c.BG[0]))
-			}
-			if c.Flags&FlagBG16M != 0 {
+			case Color16M:
 				codes = append(codes, fmt.Sprintf("48;2;%d;%d;%d", c.BG[0], c.BG[1], c.BG[2]))
+
 			}
+
 			if c.Flags&FlagUnderlineColor != 0 {
 				codes = append(codes,
 					fmt.Sprintf("58;2;%d;%d;%d", c.UL[0], c.UL[1], c.UL[2]),
