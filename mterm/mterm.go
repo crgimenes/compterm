@@ -306,49 +306,47 @@ func (t *Terminal) GetScreenAsAnsi() []byte {
 		if c.cstate != lastState {
 			lastState = c.cstate
 			// different state, we shall reset and set the new state
-			codes := []string{"0"}
+			buf.WriteString("\033[0")
 
 			switch c.ColorType & 0b11 {
 			case Color16:
-				codes = append(codes, fmt.Sprintf("%d", c.FG[0]))
+				fmt.Fprintf(buf, ";%d", c.FG[0])
 			case Color256:
-				codes = append(codes, fmt.Sprintf("38;5;%d", c.FG[0]))
+				fmt.Fprintf(buf, ";38;5;%d", c.FG[0])
 			case Color16M:
-				codes = append(codes, fmt.Sprintf("38;2;%d;%d;%d", c.FG[0], c.FG[1], c.FG[2]))
+				fmt.Fprintf(buf, ";38;2;%d;%d;%d", c.FG[0], c.FG[1], c.FG[2])
 			}
 			switch (c.ColorType >> 2) & 0b11 {
 			case Color16:
-				codes = append(codes, fmt.Sprintf("%d", c.BG[0]))
+				fmt.Fprintf(buf, ";%d", c.BG[0])
 			case Color256:
-				codes = append(codes, fmt.Sprintf("48;5;%d", c.BG[0]))
+				fmt.Fprintf(buf, ";48;5;%d", c.BG[0])
 			case Color16M:
-				codes = append(codes, fmt.Sprintf("48;2;%d;%d;%d", c.BG[0], c.BG[1], c.BG[2]))
+				fmt.Fprintf(buf, ";48;2;%d;%d;%d", c.BG[0], c.BG[1], c.BG[2])
 
 			}
 			if c.Flags&FlagUnderlineColor != 0 {
-				codes = append(codes,
-					fmt.Sprintf("58;2;%d;%d;%d", c.UL[0], c.UL[1], c.UL[2]),
-				)
+				fmt.Fprintf(buf, ";58;2;%d;%d;%d", c.UL[0], c.UL[1], c.UL[2])
 			}
 			if c.Flags&FlagBold != 0 {
-				codes = append(codes, "1")
+				buf.WriteString(";1")
 			}
 			if c.Flags&FlagUnderline != 0 {
-				codes = append(codes, "4")
+				buf.WriteString(";4")
 			}
 			if c.Flags&FlagBlink != 0 {
-				codes = append(codes, "5")
+				buf.WriteString(";5")
 			}
 			if c.Flags&FlagInverse != 0 {
-				codes = append(codes, "7")
+				buf.WriteString(";7")
 			}
 			if c.Flags&FlagInvisible != 0 {
-				codes = append(codes, "8")
+				buf.WriteString(";8")
 			}
 			if c.Flags&FlagStrike != 0 {
-				codes = append(codes, "9")
+				buf.WriteString(";9")
 			}
-			fmt.Fprintf(buf, "\033[%sm", strings.Join(codes, ";"))
+			fmt.Fprintf(buf, "m")
 		}
 		r := c.Char
 		if r == 0 {
@@ -805,49 +803,46 @@ func (t *Terminal) DBG() []byte {
 		if c.cstate != lastState {
 			lastState = c.cstate
 			// different state, we shall reset and set the new state
-			codes := []string{"0"}
+			buf.WriteString("\033[0")
+
 			switch c.ColorType & 0b11 {
 			case Color16:
-				codes = append(codes, fmt.Sprintf("%d", c.FG[0]))
+				fmt.Fprintf(buf, ";%d", c.FG[0])
 			case Color256:
-				codes = append(codes, fmt.Sprintf("38;5;%d", c.FG[0]))
+				fmt.Fprintf(buf, ";38;5;%d", c.FG[0])
 			case Color16M:
-				codes = append(codes, fmt.Sprintf("38;2;%d;%d;%d", c.FG[0], c.FG[1], c.FG[2]))
+				fmt.Fprintf(buf, ";38;2;%d;%d;%d", c.FG[0], c.FG[1], c.FG[2])
 			}
 			switch (c.ColorType >> 2) & 0b11 {
 			case Color16:
-				codes = append(codes, fmt.Sprintf("%d", c.BG[0]))
+				fmt.Fprintf(buf, ";%d", c.BG[0])
 			case Color256:
-				codes = append(codes, fmt.Sprintf("48;5;%d", c.BG[0]))
+				fmt.Fprintf(buf, ";48;5;%d", c.BG[0])
 			case Color16M:
-				codes = append(codes, fmt.Sprintf("48;2;%d;%d;%d", c.BG[0], c.BG[1], c.BG[2]))
-
+				fmt.Fprintf(buf, ";48;2;%d;%d;%d", c.BG[0], c.BG[1], c.BG[2])
 			}
-
 			if c.Flags&FlagUnderlineColor != 0 {
-				codes = append(codes,
-					fmt.Sprintf("58;2;%d;%d;%d", c.UL[0], c.UL[1], c.UL[2]),
-				)
+				fmt.Fprintf(buf, ";58;2;%d;%d;%d", c.UL[0], c.UL[1], c.UL[2])
 			}
 			if c.Flags&FlagBold != 0 {
-				codes = append(codes, "1")
+				buf.WriteString(";1")
 			}
 			if c.Flags&FlagUnderline != 0 {
-				codes = append(codes, "4")
+				buf.WriteString(";4")
 			}
 			if c.Flags&FlagBlink != 0 {
-				codes = append(codes, "5")
+				buf.WriteString(";5")
 			}
 			if c.Flags&FlagInverse != 0 {
-				codes = append(codes, "7")
+				buf.WriteString(";7")
 			}
 			if c.Flags&FlagInvisible != 0 {
-				codes = append(codes, "8")
+				buf.WriteString(";8")
 			}
 			if c.Flags&FlagStrike != 0 {
-				codes = append(codes, "9")
+				buf.WriteString(";9")
 			}
-			fmt.Fprintf(buf, "\033[%sm", strings.Join(codes, ";"))
+			fmt.Fprintf(buf, "m")
 		}
 
 		r := c.Char
