@@ -13,6 +13,7 @@
 package protocol
 
 import (
+	"compterm/constants"
 	"encoding/binary"
 	"errors"
 	"hash"
@@ -21,8 +22,7 @@ import (
 )
 
 const (
-	MAX_DATA_SIZE    = 256 * 1024         // max payload size
-	MAX_PACKAGE_SIZE = MAX_DATA_SIZE + 11 // max package size
+	MaxPackageSize = constants.BufferSize + 11 // max package size
 )
 
 var (
@@ -61,7 +61,7 @@ func checksum(data []byte) uint32 {
 // It returns the number of bytes written and an error, if any.
 func Encode(dest, src []byte, cmd byte, counter uint16) (int, error) {
 	lenData := len(src)
-	if lenData > MAX_PACKAGE_SIZE {
+	if lenData > MaxPackageSize {
 		return 0, ErrInvalidSize
 	}
 	if len(dest) < lenData+11 {
@@ -86,7 +86,7 @@ func Decode(dest, src []byte) (cmd byte, n int, counter uint16, err error) {
 		return 0, 0, 0, ErrInvalidSize
 	}
 	lenData := int(binary.BigEndian.Uint32(src[3:]))
-	if lenData > MAX_DATA_SIZE {
+	if lenData > constants.BufferSize {
 		return 0, 0, 0, ErrInvalidSize
 	}
 	if len(src) < lenData+11 {

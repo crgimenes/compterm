@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"compterm/constants"
 	"fmt"
 	"math/rand"
 	"testing"
@@ -36,14 +37,14 @@ func Test_checksum(t *testing.T) {
 
 func TestEncodeDecode(t *testing.T) {
 	in := []byte("hello")
-	out := make([]byte, MAX_PACKAGE_SIZE)
+	out := make([]byte, MaxPackageSize)
 
 	nout, err := Encode(out, in, 0x01, 0x01)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	data := make([]byte, MAX_DATA_SIZE)
+	data := make([]byte, constants.BufferSize)
 	cmd, n, _, err := Decode(data, out[:nout])
 	if err != nil {
 		t.Fatal(err)
@@ -73,7 +74,7 @@ func TestEncodeDecode(t *testing.T) {
 	}
 
 	// test invalid size
-	_, err = Encode(out, make([]byte, MAX_DATA_SIZE+1), 0x01, 0x01)
+	_, err = Encode(out, make([]byte, constants.BufferSize+1), 0x01, 0x01)
 	if err != ErrInvalidSize {
 		t.Errorf("err = %v, want %v", err, ErrInvalidSize)
 	}
@@ -85,13 +86,13 @@ func TestEncodeDecode(t *testing.T) {
 	}
 
 	// test invalid size
-	_, err = Encode(out, make([]byte, MAX_DATA_SIZE), 0x01, 0x01)
+	_, err = Encode(out, make([]byte, constants.BufferSize), 0x01, 0x01)
 	if err != nil {
 		t.Errorf("err = %v, want nil", err)
 	}
 
 	// test invalid size
-	_, err = Encode(out, make([]byte, MAX_DATA_SIZE-1), 0x01, 0x01)
+	_, err = Encode(out, make([]byte, constants.BufferSize-1), 0x01, 0x01)
 	if err != nil {
 		t.Errorf("err = %v, want nil", err)
 	}
@@ -109,7 +110,7 @@ func TestEncodeDecode(t *testing.T) {
 	}
 
 	// test invalid size
-	_, err = Encode(out, make([]byte, MAX_PACKAGE_SIZE+1), 0x01, 0x01)
+	_, err = Encode(out, make([]byte, MaxPackageSize+1), 0x01, 0x01)
 	if err != ErrInvalidSize {
 		t.Errorf("err = %v, want %v", err, ErrInvalidSize)
 	}
@@ -157,10 +158,10 @@ func randonPayload(n int) string {
 }
 
 func TestEncodeDecodeLoop(t *testing.T) {
-	data := make([]byte, MAX_DATA_SIZE)
+	data := make([]byte, constants.BufferSize)
 	for i := 0; i < 1000; i++ {
 		in := []byte(randonPayload(rand.Intn(10 + i)))
-		out := make([]byte, MAX_PACKAGE_SIZE)
+		out := make([]byte, MaxPackageSize)
 
 		n, err := Encode(out, in, 0x01, uint16(i))
 		if err != nil {
@@ -201,7 +202,7 @@ func TestEncodeDecodeLoop(t *testing.T) {
 
 func ExampleEncode() {
 	data := []byte("hello")
-	out := make([]byte, MAX_PACKAGE_SIZE)
+	out := make([]byte, MaxPackageSize)
 
 	n, err := Encode(out, data, 0x01, 0x01)
 	if err != nil {
@@ -215,7 +216,7 @@ func ExampleEncode() {
 
 func ExampleDecode() {
 	data := []byte("hello")
-	out := make([]byte, MAX_PACKAGE_SIZE)
+	out := make([]byte, MaxPackageSize)
 
 	n, err := Encode(out, data, 0x01, 0x01)
 	if err != nil {

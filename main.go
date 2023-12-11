@@ -47,6 +47,8 @@ func writeAllWS() {
 				continue
 			}
 			log.Printf("error reading from byte stream: %s\r\n", err)
+
+			removeAllConnections()
 			os.Exit(1)
 		}
 
@@ -56,8 +58,10 @@ func writeAllWS() {
 
 		connMutex.Lock()
 		for _, c := range clients {
-			cn, err := c.SendMessage(msg[:n]) // TODO: check if cn < n and if so, write the rest
-			_ = cn                            // TODO: remove this line
+			cn, err := c.Send(
+				constants.MSG,
+				msg[:n]) // TODO: check if cn < n and if so, write the rest
+			_ = cn // TODO: remove this line
 			if err != nil {
 				log.Printf("error writing to websocket: %s\r\n", err)
 				removeConnection(c)
@@ -87,7 +91,7 @@ func (o termIO) Write(p []byte) (n int, err error) {
 func sendCommandToAll(command byte, params []byte) {
 	connMutex.Lock()
 	for _, c := range clients {
-		cn, err := c.SendCommand(command, params)
+		cn, err := c.Send(command, params)
 		_ = cn
 		if err != nil {
 			log.Printf("error writing to websocket: %s\r\n", err)
@@ -140,8 +144,9 @@ func runCmd() {
 					sizeHeight, sizeWidth)))
 
 				if wsStreamEnabled {
-					sendCommandToAll(0x2, []byte(fmt.Sprintf("%d:%d",
-						sizeHeight, sizeWidth)))
+					sendCommandToAll(constants.RESIZE,
+						[]byte(fmt.Sprintf("%d:%d",
+							sizeHeight, sizeWidth)))
 				}
 
 			case syscall.SIGTERM, os.Interrupt:
@@ -226,11 +231,15 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			log.Println(err)
 		}
-		_, _ = client.ResizeTerminal(sizeHeight, sizeWidth)
+
+		mainStream.Write([]byte(fmt.Sprintf("\033[8;%d;%dt",
+			sizeHeight, sizeWidth)))
+		sendCommandToAll(constants.RESIZE, []byte(fmt.Sprintf("%d:%d",
+			sizeHeight, sizeWidth)))
 	}
 
 	if config.CFG.MOTD != "" {
-		client.SendMessage([]byte(config.CFG.MOTD + "\r\n"))
+		client.Send(constants.MSG, []byte(config.CFG.MOTD+"\r\n"))
 	}
 
 	connMutex.Lock()
@@ -319,8 +328,8 @@ func serveAPI() {
 }
 
 func main() {
-	log.SetFlags(log.LstdFlags | log.Lshortfile)
-	logFile, _ := os.Create("log.txt")
+	log.SetFlags(log.LstdFlags | log.Lshortfile | log.Lmicroseconds)
+	logFile, _ := os.Create("compterm.log")
 	log.SetOutput(logFile)
 
 	err := config.Load()
