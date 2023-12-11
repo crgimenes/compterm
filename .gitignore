@@ -1,3 +1,5 @@
 /compterm
 assets/*.min.js*
 node_modules/
+*.log
+

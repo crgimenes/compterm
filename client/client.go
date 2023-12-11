@@ -1,41 +1,37 @@
 package client
 
 import (
-	"compterm/byteStream"
 	"context"
-	"fmt"
 	"log"
+
+	"compterm/constants"
+	"compterm/stream"
 
 	"nhooyr.io/websocket"
 )
 
 type Client struct {
-	bs          *byteStream.ByteStream
-	localBuffer []byte
+	bs          *stream.Stream
 	conn        *websocket.Conn
+	localBuffer []byte
+	sbuff       []byte
 	IP          string
 	Nick        string
 }
 
 func New(conn *websocket.Conn) *Client {
 	return &Client{
-		bs:          byteStream.NewByteStream(),
-		localBuffer: make([]byte, 262144),
+		bs:          stream.New(),
 		conn:        conn,
+		localBuffer: make([]byte, constants.BufferSize),
+		sbuff:       make([]byte, constants.BufferSize),
 	}
 }
 
-func (c Client) SendMessage(p []byte) (n int, err error) {
-	p = append([]byte{0x1}, p...)
-	return c.Write(p)
-}
-
-func (c Client) ResizeTerminal(rows, cols int) (n int, err error) {
-	return c.SendCommand(0x2, []byte(fmt.Sprintf("%d:%d", rows, cols)))
-}
-
-func (c *Client) SendCommand(prefix byte, p []byte) (n int, err error) {
-	return c.bs.Write(append([]byte{prefix}, p...))
+func (c *Client) Send(prefix byte, p []byte) (n int, err error) {
+	c.sbuff[0] = prefix
+	n = copy(c.sbuff[1:], p)
+	return c.bs.Write(c.sbuff[:n+1])
 }
 
 func (c *Client) Write(p []byte) (n int, err error) {

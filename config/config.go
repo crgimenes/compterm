@@ -1,21 +1,19 @@
 package config
 
 import (
+	"compterm/constants"
+	"flag"
 	"os"
 	"path/filepath"
-
-	"crg.eti.br/go/config"
-	_ "crg.eti.br/go/config/ini"
 )
 
 type Config struct {
-	Debug     bool   `json:"debug" ini:"debug" cfg:"debug" cfgDefault:"false" cfgHelper:"Enable debug mode"`
-	Listen    string `json:"listen" ini:"listen" cfg:"listen" cfgDefault:"0.0.0.0:2200" cfgHelper:"Listen address"`
-	APIListen string `json:"api_listen" ini:"api_listen" cfg:"api_listen" cfgDefault:"127.0.0.1:2201" cfgHelper:"API Listen address"`
-	Command   string `json:"command" ini:"command" cfg:"c" cfgHelper:"Command to run default: $SHELL"`
-	MOTD      string `json:"motd" ini:"motd" cfg:"motd" cfgHelper:"Message of the day"`
-	//PlaybackFile string `json:"playback_file" ini:"playback_file" cfg:"playback_file" cfgDefault:"out.csv" cfgHelper:"Playback file"`
-	APIKey string `json:"api_key" init:"api_key" cfg:"api_key" cfgHelper:"API Key"`
+	Debug     bool
+	Listen    string
+	APIListen string
+	Command   string
+	MOTD      string
+	APIKey    string
 }
 
 var CFG *Config
@@ -27,29 +25,32 @@ func Load() error {
 	}
 
 	homedir := home + "/.config/compterm"
-	// full path do arquivo
 	fullpath, err := filepath.Abs(homedir)
 	if err != nil {
 		return err
 	}
 
-	// cria o diretório
-	err = os.MkdirAll(fullpath, 0750)
+	err = os.MkdirAll(fullpath, constants.DefaultDirMode)
 	if err != nil {
 		return err
 	}
 
 	CFG = &Config{}
-	config.PrefixEnv = "COMPTERM"
-	config.File = fullpath + "/config.ini"
-	err = config.Parse(CFG)
-	if err != nil {
-		return err
-	}
 
-	if CFG.Command == "" {
-		CFG.Command = os.Getenv("SHELL")
-	}
+	flag.StringVar(&CFG.Listen,
+		"listen", "0.0.0.0:2200", "Listen address default: \"0.0.0.0:2200\"")
+	flag.StringVar(&CFG.APIListen,
+		"api_listen", "127.0.0.1:2201", "API Listen address default: \"127.0.0.1:2201")
+	flag.StringVar(&CFG.APIKey,
+		"api_key", "", "API Key")
+	flag.StringVar(&CFG.Command,
+		"command", os.Getenv("SHELL"), "Command to run default: $SHELL")
+	flag.StringVar(&CFG.MOTD,
+		"motd", "", "Message of the day")
+	flag.BoolVar(&CFG.Debug,
+		"debug", false, "Enable debug mode")
+
+	flag.Parse()
 
 	return err
 }

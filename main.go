@@ -1,11 +1,6 @@
 package main
 
 import (
-	"compterm/assets"
-	"compterm/byteStream"
-	"compterm/client"
-	"compterm/config"
-	"compterm/playback"
 	"fmt"
 	"io"
 	"log"
@@ -19,6 +14,12 @@ import (
 	"syscall"
 	"time"
 
+	"compterm/assets"
+	"compterm/client"
+	"compterm/config"
+	"compterm/constants"
+	"compterm/stream"
+
 	"github.com/kr/pty"
 	"golang.org/x/term"
 	"nhooyr.io/websocket"
@@ -30,25 +31,24 @@ var (
 	termio          = termIO{}
 	clients         []*client.Client
 	connMutex       sync.Mutex
-	bs              = byteStream.NewByteStream()
+	mainStream      = stream.New()
 	ptmx            *os.File
 	wsStreamEnabled bool   // Websocket stream enabled
-	streamRecord    bool   // Websocket stream record
 	GitTag          string = "0.0.0v"
-	PlaybackFile    string
-	pb              *playback.Playback
 )
 
 func writeAllWS() {
-	msg := make([]byte, 262144)
+	msg := make([]byte, constants.BufferSize)
 	for {
-		n, err := bs.Read(msg)
+		n, err := mainStream.Read(msg)
 		if err != nil {
 			if err == io.EOF {
 				time.Sleep(100 * time.Millisecond)
 				continue
 			}
 			log.Printf("error reading from byte stream: %s\r\n", err)
+
+			removeAllConnections()
 			os.Exit(1)
 		}
 
@@ -58,12 +58,13 @@ func writeAllWS() {
 
 		connMutex.Lock()
 		for _, c := range clients {
-			cn, err := c.SendMessage(msg[:n]) // TODO: check if cn < n and if so, write the rest
-			_ = cn                            // TODO: remove this line
+			cn, err := c.Send(
+				constants.MSG,
+				msg[:n]) // TODO: check if cn < n and if so, write the rest
+			_ = cn // TODO: remove this line
 			if err != nil {
 				log.Printf("error writing to websocket: %s\r\n", err)
 				removeConnection(c)
-				connMutex.Unlock()
 			}
 		}
 		connMutex.Unlock()
@@ -82,11 +83,7 @@ func (o termIO) Write(p []byte) (n int, err error) {
 	}
 
 	// write to websocket
-	bs.Write(p)
-
-	if streamRecord {
-		pb.Rec(0x1, p) // TODO: fix magic number
-	}
+	mainStream.Write(p)
 
 	return
 }
@@ -94,12 +91,11 @@ func (o termIO) Write(p []byte) (n int, err error) {
 func sendCommandToAll(command byte, params []byte) {
 	connMutex.Lock()
 	for _, c := range clients {
-		cn, err := c.SendCommand(command, params)
+		cn, err := c.Send(command, params)
 		_ = cn
 		if err != nil {
 			log.Printf("error writing to websocket: %s\r\n", err)
 			removeConnection(c)
-			connMutex.Unlock()
 		}
 	}
 	connMutex.Unlock()
@@ -144,19 +140,13 @@ func runCmd() {
 				if err != nil {
 					log.Fatalf("error getting size: %s\r\n", err)
 				}
-				bs.Write([]byte(fmt.Sprintf("\033[8;%d;%dt",
+				mainStream.Write([]byte(fmt.Sprintf("\033[8;%d;%dt",
 					sizeHeight, sizeWidth)))
 
 				if wsStreamEnabled {
-					sendCommandToAll(0x2, []byte(fmt.Sprintf("%d:%d",
-						sizeHeight, sizeWidth)))
-				}
-
-				if streamRecord {
-					pb.Rec(0x1, []byte(fmt.Sprintf("\033[8;%d;%dt",
-						sizeHeight, sizeWidth)))
-					pb.Rec(0x2, []byte(fmt.Sprintf("%d:%d",
-						sizeHeight, sizeWidth)))
+					sendCommandToAll(constants.RESIZE,
+						[]byte(fmt.Sprintf("%d:%d",
+							sizeHeight, sizeWidth)))
 				}
 
 			case syscall.SIGTERM, os.Interrupt:
@@ -186,8 +176,6 @@ func runCmd() {
 
 func removeAllConnections() {
 	connMutex.Lock()
-	defer connMutex.Unlock()
-
 	for _, c := range clients {
 		err := c.Close()
 		if err != nil {
@@ -195,12 +183,11 @@ func removeAllConnections() {
 		}
 	}
 	clients = nil
+	connMutex.Unlock()
 }
 
 func removeConnection(c *client.Client) {
 	connMutex.Lock()
-	defer connMutex.Unlock()
-
 	for i, client := range clients {
 		if client == c {
 			client.Close()
@@ -208,11 +195,12 @@ func removeConnection(c *client.Client) {
 			break
 		}
 	}
+	connMutex.Unlock()
 }
 
 func readMessages(client *client.Client) {
 	for {
-		buffer := make([]byte, 262144)
+		buffer := make([]byte, constants.BufferSize)
 		n, err := client.ReadFromWS(buffer)
 		if err != nil {
 			log.Printf("error reading from websocket: %s\r\n", err)
@@ -243,11 +231,15 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			log.Println(err)
 		}
-		_, _ = client.ResizeTerminal(sizeHeight, sizeWidth)
+
+		mainStream.Write([]byte(fmt.Sprintf("\033[8;%d;%dt",
+			sizeHeight, sizeWidth)))
+		sendCommandToAll(constants.RESIZE, []byte(fmt.Sprintf("%d:%d",
+			sizeHeight, sizeWidth)))
 	}
 
 	if config.CFG.MOTD != "" {
-		client.SendMessage([]byte(config.CFG.MOTD + "\r\n"))
+		client.Send(constants.MSG, []byte(config.CFG.MOTD+"\r\n"))
 	}
 
 	connMutex.Lock()
@@ -311,54 +303,6 @@ func apiHandler(w http.ResponseWriter, r *http.Request) {
 		// curl -X GET http://localhost:2201/api/action/get-version
 
 		_, _ = w.Write([]byte(GitTag))
-	case "start-recording":
-		// curl -X GET http://localhost:2201/api/action/start-recording
-
-		if streamRecord {
-			errorBadRequest(w)
-			return
-		}
-		PlaybackFile = fmt.Sprintf("compterm_%s.csv", time.Now().Format("2006-01-02_15-04-05"))
-		pb = playback.New(PlaybackFile)
-		pb.OpenToAppend()
-		streamRecord = true
-	case "stop-recording":
-		// curl -X GET http://localhost:2201/api/action/stop-recording
-
-		if !streamRecord {
-			errorBadRequest(w)
-			return
-		}
-		streamRecord = false
-		pb.Close()
-	case "playback":
-		// curl -X GET http://localhost:2201/api/action/playback/2021-08-01_15-04-05.csv
-
-		if streamRecord {
-			log.Printf("error stream record is enabled")
-			errorBadRequest(w)
-			return
-		}
-
-		if len(parameters) != 2 {
-			log.Printf("invalid path")
-			errorBadRequest(w)
-			return
-		}
-		PlaybackFile = parameters[1] // TODO: prevent path traversal attack and check if file exists
-
-		// start playback
-		log.Printf("PlaybackFile: %s\n", PlaybackFile)
-
-		pb = playback.New(PlaybackFile)
-		err := pb.Open()
-		if err != nil {
-			log.Printf("error opening playback file: %s\r\n", err)
-			errorBadRequest(w)
-			return
-		}
-
-		go pb.Play(termio)
 	default:
 		errorBadRequest(w)
 		return
@@ -384,7 +328,9 @@ func serveAPI() {
 }
 
 func main() {
-	log.SetFlags(log.LstdFlags | log.Lshortfile)
+	log.SetFlags(log.LstdFlags | log.Lshortfile | log.Lmicroseconds)
+	logFile, _ := os.Create("compterm.log")
+	log.SetOutput(logFile)
 
 	err := config.Load()
 	if err != nil {

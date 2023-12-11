@@ -1,6 +1,7 @@
 package main
 
 import (
+	"compterm/constants"
 	"context"
 	"fmt"
 	"io"
@@ -48,7 +49,7 @@ func main() {
 		// command is the first byte of data
 		command := data[0]
 		switch command {
-		case 0x1:
+		case constants.MSG:
 			log.Println("SCREEN:")
 			log.Printf("%q", string(data[1:]))
 
