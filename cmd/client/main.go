@@ -76,7 +76,7 @@ func main() {
 			for i, line := range lines {
 				fmt.Printf("%02d|%s\033[0m|%02d\n", i, line, i)
 			}
-		case 0x2:
+		case constants.RESIZE:
 			var c, l int
 			fmt.Sscanf(string(data[1:]), "%d:%d", &c, &l)
 			// log.Println("Resizing cols:", c, "lines:", l)

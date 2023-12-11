@@ -294,7 +294,9 @@ func apiHandler(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			log.Println(err)
 		}
-		sendCommandToAll(0x2, []byte(fmt.Sprintf("%d:%d", sizeHeight, sizeWidth)))
+		sendCommandToAll(
+			constants.RESIZE,
+			[]byte(fmt.Sprintf("%d:%d", sizeHeight, sizeWidth)))
 	case "disable-ws-stream":
 		// curl -X GET http://localhost:2201/api/action/disable-ws-stream
 
