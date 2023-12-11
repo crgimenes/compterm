@@ -312,6 +312,8 @@ func (t *Terminal) GetScreenAsAnsi() []byte {
 		if x >= t.MaxCols {
 			y++
 			x = 0
+			// return to beginning of line
+			buf.WriteByte('\r')
 			fmt.Fprintln(buf) // not needed?!
 		}
 		c := t.screen[i]

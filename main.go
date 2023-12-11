@@ -84,7 +84,6 @@ func (o termIO) Write(p []byte) (n int, err error) {
 
 	// write to websocket
 	mainStream.Write(p)
-
 	return
 }
 
@@ -140,6 +139,7 @@ func runCmd() {
 				if err != nil {
 					log.Fatalf("error getting size: %s\r\n", err)
 				}
+
 				mainStream.Write([]byte(fmt.Sprintf("\033[8;%d;%dt",
 					sizeHeight, sizeWidth)))
 
@@ -232,9 +232,9 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 			log.Println(err)
 		}
 
+		client.Send(constants.RESIZE,
+			[]byte(fmt.Sprintf("%d:%d", sizeHeight, sizeWidth)))
 		mainStream.Write([]byte(fmt.Sprintf("\033[8;%d;%dt",
-			sizeHeight, sizeWidth)))
-		sendCommandToAll(constants.RESIZE, []byte(fmt.Sprintf("%d:%d",
 			sizeHeight, sizeWidth)))
 	}
 
