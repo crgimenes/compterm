@@ -100,12 +100,16 @@ func (s *cstate) set(p ...int) error {
 			s.Flags &= ^FlagBold
 		case c == 3:
 			s.Flags |= FlagItalic
+		case c == 23:
+			s.Flags &= ^FlagItalic
 		case c == 4:
 			s.Flags |= FlagUnderline
 		case c == 24:
 			s.Flags &= ^FlagUnderline
 		case c == 5:
 			s.Flags |= FlagBlink
+		case c == 25:
+			s.Flags &= ^FlagBlink
 		case c == 7:
 			s.Flags |= FlagInverse
 		case c == 27:
