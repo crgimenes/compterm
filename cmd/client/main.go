@@ -1,12 +1,13 @@
 package main
 
 import (
-	"compterm/constants"
 	"context"
 	"fmt"
 	"io"
 	"log"
 	"strings"
+
+	"compterm/constants"
 
 	"compterm/mterm"
 
@@ -72,7 +73,7 @@ func main() {
 
 			fmt.Printf("\033]0m%s\a", t.Title)
 			fmt.Println("Title: ", t.Title)
-			lines := strings.Split(string(t.DBG()), "\n")
+			lines := strings.Split(string(t.DBG()), "\r\n")
 			for i, line := range lines {
 				fmt.Printf("%02d|%s\033[0m|%02d\n", i, line, i)
 			}
