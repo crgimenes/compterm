@@ -72,9 +72,6 @@ func writeAllWS() {
 }
 
 func (o termIO) Write(p []byte) (n int, err error) {
-	// append to out.txt file
-	//appendToOutFile(p)
-
 	// write to stdout
 	n, err = os.Stdout.Write(p)
 	if err != nil {
