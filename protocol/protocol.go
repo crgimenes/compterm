@@ -13,12 +13,13 @@
 package protocol
 
 import (
-	"compterm/constants"
 	"encoding/binary"
 	"errors"
 	"hash"
 	"hash/fnv"
 	"sync"
+
+	"github.com/crgimenes/compterm/constants"
 )
 
 const (

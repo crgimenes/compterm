@@ -1,10 +1,11 @@
 package config
 
 import (
-	"compterm/constants"
 	"flag"
 	"os"
 	"path/filepath"
+
+	"github.com/crgimenes/compterm/constants"
 )
 
 type Config struct {

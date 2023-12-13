@@ -4,9 +4,8 @@ import (
 	"context"
 	"log"
 
-	"compterm/constants"
-	"compterm/stream"
-
+	"github.com/crgimenes/compterm/constants"
+	"github.com/crgimenes/compterm/stream"
 	"nhooyr.io/websocket"
 )
 
@@ -70,7 +69,7 @@ func (c *Client) WriteLoop() {
 				log.Printf("error writing to websocket: %s, %v\r\n",
 					err, websocket.CloseStatus(err)) // TODO: send to file, not the screen
 			}
-			//removeConnection(c)
+			// removeConnection(c)
 			return
 		}
 	}

@@ -1,10 +1,11 @@
 package protocol
 
 import (
-	"compterm/constants"
 	"fmt"
 	"math/rand"
 	"testing"
+
+	"github.com/crgimenes/compterm/constants"
 )
 
 func Test_checksum(t *testing.T) {
