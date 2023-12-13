@@ -21,6 +21,10 @@ js:
 js-clean:
 	rm -rf assets/term.min.js* node_modules
 
+
+intel:
+	GOOS=linux GOARCH=amd64 go build -o $(BINARY_NAME) -ldflags "$(LDFLAGS)" .
+
 clean: js-clean
 	go clean
 	rm -f $(BINARY_NAME)
