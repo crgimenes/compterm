@@ -7,10 +7,8 @@ import (
 	"log"
 	"strings"
 
-	"compterm/constants"
-
-	"compterm/mterm"
-
+	"github.com/crgimenes/compterm/constants"
+	"github.com/crgimenes/compterm/mterm"
 	"nhooyr.io/websocket"
 )
 

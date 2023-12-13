@@ -1,11 +1,12 @@
 package main
 
 import (
-	"compterm/config"
 	"errors"
 	"io"
 	"net/http"
 	"strings"
+
+	"github.com/crgimenes/compterm/config"
 )
 
 var (

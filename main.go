@@ -14,11 +14,11 @@ import (
 	"syscall"
 	"time"
 
-	"compterm/assets"
-	"compterm/client"
-	"compterm/config"
-	"compterm/constants"
-	"compterm/stream"
+	"github.com/crgimenes/compterm/assets"
+	"github.com/crgimenes/compterm/client"
+	"github.com/crgimenes/compterm/config"
+	"github.com/crgimenes/compterm/constants"
+	"github.com/crgimenes/compterm/stream"
 
 	"github.com/kr/pty"
 	"golang.org/x/term"
