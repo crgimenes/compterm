@@ -353,7 +353,7 @@ func (t *Terminal) GetScreenAsAnsi() []byte {
 			fmt.Fprintf(buf, "m")
 		}
 		r := c.Char
-		if r == 0 {
+		if r < ' ' {
 			r = ' '
 		}
 		buf.WriteRune(r)
@@ -435,6 +435,13 @@ func (t *Terminal) esc(r rune) (stateFn, error) {
 	case 'c':
 		// TODO: should be t.Reset() and reset state
 		t.Clear()
+	case 'M':
+		t.CursorLine = max(0, t.CursorLine-1)
+
+	case 'k':
+		// TODO: {lpf} (completed by copilot: Insert character (ICH))
+	case '\\':
+		// TODO: {lpf} (completed by copilot: String Terminator (ST))
 	default:
 		return (*Terminal).normal, fmt.Errorf("unknown escape sequence: %d %[1]c", r)
 	}
@@ -644,9 +651,15 @@ func (t *Terminal) csi() stateFn {
 		case 'M': // Delete lines, it will move the rest of the lines up
 			n := 1
 			getParams(p, &n)
-			off := t.CursorCol + t.CursorLine*t.MaxCols
-			copy(t.screen[off:], t.screen[off+n*t.MaxCols:])
-			fill(t.screen[len(t.screen)-n*t.MaxCols:], Cell{})
+			start := t.scrollRegion[0] * t.MaxCols
+			end := t.scrollRegion[1] * t.MaxCols
+			region := t.screen[start:end]
+
+			lr := max(t.CursorLine, 0)
+			loff := clamp(lr*t.MaxCols, 0, len(region))
+			eoff := clamp(loff+n*t.MaxCols, 0, len(region))
+			copy(region[loff:], region[eoff:])
+			fill(region[len(region)-n*t.MaxCols:], Cell{})
 			t.cellUpdate++
 		case 'P': // Delete chars in line it will move the rest of the line to the left
 			n := 1
@@ -850,7 +863,7 @@ func (t *Terminal) DBG() []byte {
 		}
 
 		r := c.Char
-		if r == 0 {
+		if r < ' ' {
 			r = ' '
 		}
 		if x == t.CursorCol && y == t.CursorLine {
