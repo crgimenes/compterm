@@ -1,4 +1,4 @@
-module compterm
+module github.com/crgimenes/compterm
 
 go 1.21.4
 
