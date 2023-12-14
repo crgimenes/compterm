@@ -143,12 +143,12 @@ func runCmd() {
 					log.Fatalf("error getting size: %s\r\n", err)
 				}
 
+				mt.Resize(sizeHeight, sizeWidth)
+
 				mainStream.Write([]byte(fmt.Sprintf("\033[8;%d;%dt",
 					sizeHeight, sizeWidth)))
 
 				if wsStreamEnabled {
-					mt.Resize(sizeHeight, sizeWidth)
-
 					sendCommandToAll(constants.RESIZE,
 						[]byte(fmt.Sprintf("%d:%d",
 							sizeHeight, sizeWidth)))
@@ -241,7 +241,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 			[]byte(fmt.Sprintf("%d:%d", sizeHeight, sizeWidth)))
 
 		// set terminal size, clear screen and set cursor to 1,1
-		client.DirectSend(constants.MSG, []byte(fmt.Sprintf("\033[8;%d;%dt\033[2J\033[1;1H",
+		client.DirectSend(constants.MSG, []byte(fmt.Sprintf("\033[8;%d;%dt\033[2J\033[0;0H",
 			sizeHeight, sizeWidth)))
 
 		// get screen as ansi from mterm buffer
