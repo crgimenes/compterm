@@ -251,8 +251,8 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 		client.DirectSend(constants.MSG, []byte(msg))
 
 		// set cursor position to the current position
-		line := mt.CursorLine
-		col := mt.CursorCol
+		line := mt.CursorLine + 1
+		col := mt.CursorCol + 1
 		client.DirectSend(constants.MSG, []byte(fmt.Sprintf("\033[%d;%dH", line, col)))
 	}
 
