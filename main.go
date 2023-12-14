@@ -347,7 +347,7 @@ func main() {
 		log.Fatalf("error loading config: %s\r\n", err)
 	}
 
-	mt = mterm.New(80, 24)
+	mt = mterm.New(24, 80)
 
 	go writeAllWS()
 	go runCmd()
