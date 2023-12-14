@@ -18,6 +18,7 @@ import (
 	"github.com/crgimenes/compterm/client"
 	"github.com/crgimenes/compterm/config"
 	"github.com/crgimenes/compterm/constants"
+	"github.com/crgimenes/compterm/mterm"
 	"github.com/crgimenes/compterm/stream"
 
 	"github.com/kr/pty"
@@ -28,13 +29,15 @@ import (
 type termIO struct{}
 
 var (
-	termio          = termIO{}
-	clients         []*client.Client
-	connMutex       sync.Mutex
-	mainStream      = stream.New()
-	ptmx            *os.File
-	wsStreamEnabled bool   // Websocket stream enabled
-	GitTag          string = "0.0.0v"
+	termio                = termIO{}
+	mt                    *mterm.Terminal
+	clients               []*client.Client
+	connMutex             sync.Mutex
+	mainStream            = stream.New()
+	ptmx                  *os.File
+	wsStreamEnabled       bool   // Websocket stream enabled
+	GitTag                string = "0.0.0v"
+	sizeWidth, sizeHeight int
 )
 
 func writeAllWS() {
@@ -52,15 +55,18 @@ func writeAllWS() {
 			os.Exit(1)
 		}
 
+		// only write to websocket and mterm buffer if wsStreamEnabled is true
 		if !wsStreamEnabled {
 			continue
 		}
+
+		mt.Write(msg[:n]) // write to mterm buffer
 
 		connMutex.Lock()
 		for _, c := range clients {
 			cn, err := c.Send(
 				constants.MSG,
-				msg[:n]) // TODO: check if cn < n and if so, write the rest
+				msg[:n]) // TODO: check if cn < n and if so, write the rest of the buffer
 			_ = cn // TODO: remove this line
 			if err != nil {
 				log.Printf("error writing to websocket: %s\r\n", err)
@@ -130,8 +136,8 @@ func runCmd() {
 			case syscall.SIGWINCH:
 				// Update window size.
 				_ = pty.InheritSize(os.Stdin, ptmx)
-
-				sizeWidth, sizeHeight, err := term.GetSize(
+				var err error
+				sizeWidth, sizeHeight, err = term.GetSize(
 					int(os.Stdin.Fd()))
 				if err != nil {
 					log.Fatalf("error getting size: %s\r\n", err)
@@ -141,6 +147,8 @@ func runCmd() {
 					sizeHeight, sizeWidth)))
 
 				if wsStreamEnabled {
+					mt.Resize(sizeHeight, sizeWidth)
+
 					sendCommandToAll(constants.RESIZE,
 						[]byte(fmt.Sprintf("%d:%d",
 							sizeHeight, sizeWidth)))
@@ -223,20 +231,29 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 
 	client := client.New(c)
 
-	if wsStreamEnabled {
-		sizeWidth, sizeHeight, err := term.GetSize(int(os.Stdin.Fd()))
-		if err != nil {
-			log.Println(err)
-		}
-
-		client.Send(constants.RESIZE,
-			[]byte(fmt.Sprintf("%d:%d", sizeHeight, sizeWidth)))
-		mainStream.Write([]byte(fmt.Sprintf("\033[8;%d;%dt",
-			sizeHeight, sizeWidth)))
+	if config.CFG.MOTD != "" {
+		client.DirectSend(constants.MSG, []byte(config.CFG.MOTD+"\r\n"))
 	}
 
-	if config.CFG.MOTD != "" {
-		client.Send(constants.MSG, []byte(config.CFG.MOTD+"\r\n"))
+	if wsStreamEnabled {
+		// send current terminal size (resize the xtermjs terminal)
+		client.DirectSend(constants.RESIZE,
+			[]byte(fmt.Sprintf("%d:%d", sizeHeight, sizeWidth)))
+
+		// set terminal size, clear screen and set cursor to 1,1
+		client.DirectSend(constants.MSG, []byte(fmt.Sprintf("\033[8;%d;%dt\033[2J\033[1;1H",
+			sizeHeight, sizeWidth)))
+
+		// get screen as ansi from mterm buffer
+		msg := mt.GetScreenAsAnsi()
+
+		// send screen to xtermjs terminal
+		client.DirectSend(constants.MSG, []byte(msg))
+
+		// set cursor position to the current position
+		line := mt.CursorLine
+		col := mt.CursorCol
+		client.DirectSend(constants.MSG, []byte(fmt.Sprintf("\033[%d;%dH", line, col)))
 	}
 
 	connMutex.Lock()
@@ -244,7 +261,6 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 	connMutex.Unlock()
 
 	go client.WriteLoop()
-
 	// go readMessages(client)
 }
 
@@ -286,11 +302,6 @@ func apiHandler(w http.ResponseWriter, r *http.Request) {
 		// curl -X GET http://localhost:2201/api/action/enable-ws-stream
 
 		wsStreamEnabled = true
-		// send current terminal size
-		sizeWidth, sizeHeight, err := term.GetSize(int(os.Stdin.Fd()))
-		if err != nil {
-			log.Println(err)
-		}
 		sendCommandToAll(
 			constants.RESIZE,
 			[]byte(fmt.Sprintf("%d:%d", sizeHeight, sizeWidth)))
@@ -335,6 +346,8 @@ func main() {
 	if err != nil {
 		log.Fatalf("error loading config: %s\r\n", err)
 	}
+
+	mt = mterm.New(80, 24)
 
 	go writeAllWS()
 	go runCmd()

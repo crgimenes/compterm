@@ -27,20 +27,41 @@ func New(conn *websocket.Conn) *Client {
 	}
 }
 
+// DirectSend sends a message to the client without using the stream
+func (c *Client) DirectSend(prefix byte, p []byte) (n int, err error) {
+	buff := make([]byte, constants.BufferSize)
+	buff[0] = prefix
+	n = copy(buff[1:], p)
+	err = c.conn.Write(context.Background(), websocket.MessageBinary, buff[:n+1])
+	if err != nil {
+		if websocket.CloseStatus(err) != websocket.StatusNormalClosure {
+			log.Printf("error writing to websocket: %s, %v\r\n",
+				err, websocket.CloseStatus(err)) // TODO: send to file, not the screen
+		}
+		// removeConnection(c)
+		return 0, err
+	}
+	return n, nil
+}
+
+// Send sends a message to the client using the stream
 func (c *Client) Send(prefix byte, p []byte) (n int, err error) {
 	c.sbuff[0] = prefix
 	n = copy(c.sbuff[1:], p)
 	return c.bs.Write(c.sbuff[:n+1])
 }
 
+// Write writes to the stream
 func (c *Client) Write(p []byte) (n int, err error) {
 	return c.bs.Write(p)
 }
 
+// Read reads from the stream
 func (c *Client) Read(p []byte) (n int, err error) {
 	return c.bs.Read(p)
 }
 
+// ReadFromWS reads from the websocket
 func (c *Client) ReadFromWS(p []byte) (n int, err error) {
 	_, r, err := c.conn.Read(context.Background())
 	if err != nil {
@@ -51,10 +72,12 @@ func (c *Client) ReadFromWS(p []byte) (n int, err error) {
 	return n, nil
 }
 
+// Close closes the websocket connection
 func (c *Client) Close() error {
 	return c.conn.Close(websocket.StatusNormalClosure, "")
 }
 
+// WriteLoop writes to the websocket
 func (c *Client) WriteLoop() {
 	for {
 		n, err := c.bs.Read(c.localBuffer)
