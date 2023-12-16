@@ -16,6 +16,7 @@ type Client struct {
 	sbuff       []byte
 	IP          string
 	Nick        string
+	SessionID   string
 }
 
 func New(conn *websocket.Conn) *Client {

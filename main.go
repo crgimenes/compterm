@@ -257,11 +257,12 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	client := client.New(c)
+	client.SessionID = sid
 
 	motd := config.CFG.MOTD
 
 	if motd == "" {
-		motd = "Welcome to compterm, please wait for the command to start...\r\n"
+		motd = "compterm " + GitTag + "\r\nWelcome to compterm, please wait for the command to start...\r\n"
 	}
 
 	client.DirectSend(constants.MSG, []byte(motd))

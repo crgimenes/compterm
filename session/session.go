@@ -12,8 +12,8 @@ type Control struct {
 }
 
 type SessionData struct {
-	ExpireAt time.Time
-	Data     any
+	ExpireAt      time.Time
+	CurrentScreen int
 }
 
 func New(cookieName string) *Control {
