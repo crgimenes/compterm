@@ -19,6 +19,7 @@ import (
 	"github.com/crgimenes/compterm/config"
 	"github.com/crgimenes/compterm/constants"
 	"github.com/crgimenes/compterm/mterm"
+	"github.com/crgimenes/compterm/session"
 	"github.com/crgimenes/compterm/stream"
 
 	"github.com/kr/pty"
@@ -38,6 +39,7 @@ var (
 	wsStreamEnabled       bool   // Websocket stream enabled
 	GitTag                string = "0.0.0v"
 	sizeWidth, sizeHeight int
+	sc                    *session.Control
 )
 
 func writeAllWS() {
@@ -221,7 +223,32 @@ func processInput(client *client.Client, b []byte) {
 	_, _ = io.Copy(ptmx, strings.NewReader(string(b)))
 }
 
+func mainHandler(w http.ResponseWriter, r *http.Request) {
+	sid, sd, ok := sc.Get(r)
+	if !ok {
+		sid, sd = sc.Create()
+	}
+
+	// renew session
+	sc.Save(w, sid, sd)
+
+	///////////////////////////////////////////////
+
+	http.FileServer(assets.FS).ServeHTTP(w, r)
+
+}
+
 func wsHandler(w http.ResponseWriter, r *http.Request) {
+	sid, sd, ok := sc.Get(r)
+	if !ok {
+		sid, sd = sc.Create()
+	}
+
+	// renew session
+	sc.Save(w, sid, sd)
+
+	////////////////////////////////////////////////
+
 	c, err := websocket.Accept(w, r, nil)
 	if err != nil {
 		log.Println(err)
@@ -231,9 +258,13 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 
 	client := client.New(c)
 
-	if config.CFG.MOTD != "" {
-		client.DirectSend(constants.MSG, []byte(config.CFG.MOTD+"\r\n"))
+	motd := config.CFG.MOTD
+
+	if motd == "" {
+		motd = "Welcome to compterm, please wait for the command to start...\r\n"
 	}
+
+	client.DirectSend(constants.MSG, []byte(motd))
 
 	if wsStreamEnabled {
 		// send current terminal size (resize the xtermjs terminal)
@@ -267,7 +298,8 @@ func serveHTTP() {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/ws", wsHandler)
-	mux.Handle("/", http.FileServer(assets.FS))
+	//mux.Handle("/", http.FileServer(assets.FS))
+	mux.HandleFunc("/", mainHandler)
 
 	s := &http.Server{
 		Handler:        mux,
@@ -341,10 +373,16 @@ func main() {
 	logFile, _ := os.Create("compterm.log")
 	log.SetOutput(logFile)
 
+	log.Printf("compterm version %s\n", GitTag)
+	log.Printf("pid: %d\r\n", os.Getpid())
+
 	err := config.Load()
 	if err != nil {
-		log.Fatalf("error loading config: %s\r\n", err)
+		log.Fatalf("error loading config: %s\n", err)
 	}
+
+	const cookieName = "compterm"
+	sc = session.New(cookieName)
 
 	mt = mterm.New(24, 80)
 
