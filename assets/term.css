@@ -8,6 +8,7 @@
 html,
 body {
     background-color: #111;
+    font-family: terminal,courier-new,courier,monospace;
     height: 100vh;
     margin: 0;
     overflow: hidden;

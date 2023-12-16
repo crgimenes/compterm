@@ -45,6 +45,9 @@ func (s *Stream) Read(p []byte) (n int, err error) {
 		if s.closed {
 			return 0, io.EOF
 		}
+		if s.cond == nil {
+			return 0, io.ErrClosedPipe
+		}
 		s.cond.Wait() // Wait for data to be available.
 	}
 

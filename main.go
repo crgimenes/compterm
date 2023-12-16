@@ -336,6 +336,10 @@ func apiHandler(w http.ResponseWriter, r *http.Request) {
 		// curl -X GET http://localhost:2201/api/action/enable-ws-stream
 
 		wsStreamEnabled = true
+
+		sendCommandToAll(
+			constants.MSG,
+			[]byte(fmt.Sprintf("\033[8;%d;%dt\033[2J\033[0;0H", sizeHeight, sizeWidth)))
 		sendCommandToAll(
 			constants.RESIZE,
 			[]byte(fmt.Sprintf("%d:%d", sizeHeight, sizeWidth)))
