@@ -36,6 +36,7 @@ const termOptions = {
 const terminal = new Terminal(termOptions);
 terminal.loadAddon(new WebLinksAddon());
 terminal.open(document.getElementById('terminal'));
+terminal.focus();
 
 const progress = '/-\\|';
 let progressIndex = 0;
