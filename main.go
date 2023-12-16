@@ -262,7 +262,9 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 	motd := config.CFG.MOTD
 
 	if motd == "" {
-		motd = "compterm " + GitTag + "\r\nWelcome to compterm, please wait for the command to start...\r\n"
+		// azul claro
+		motd = "\033[1;36mcompterm\033[0m " +
+			GitTag + "\r\nWelcome to compterm, please wait for the command to start...\r\n"
 	}
 
 	client.DirectSend(constants.MSG, []byte(motd))
