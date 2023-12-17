@@ -92,7 +92,7 @@ func (o termIO) Write(p []byte) (n int, err error) {
 	return
 }
 
-func sendCommandToAll(command byte, params []byte) {
+func sendToAll(command byte, params []byte) {
 	connMutex.Lock()
 	for _, c := range clients {
 		cn, err := c.Send(command, params)
@@ -151,7 +151,7 @@ func runCmd() {
 					sizeHeight, sizeWidth)))
 
 				if wsStreamEnabled {
-					sendCommandToAll(constants.RESIZE,
+					sendToAll(constants.RESIZE,
 						[]byte(fmt.Sprintf("%d:%d",
 							sizeHeight, sizeWidth)))
 				}
@@ -337,10 +337,10 @@ func apiHandler(w http.ResponseWriter, r *http.Request) {
 
 		wsStreamEnabled = true
 
-		sendCommandToAll(
+		sendToAll(
 			constants.MSG,
 			[]byte(fmt.Sprintf("\033[8;%d;%dt\033[2J\033[0;0H", sizeHeight, sizeWidth)))
-		sendCommandToAll(
+		sendToAll(
 			constants.RESIZE,
 			[]byte(fmt.Sprintf("%d:%d", sizeHeight, sizeWidth)))
 	case "disable-ws-stream":

@@ -46,6 +46,64 @@ function base64ToBytes(base64) {
   return Uint8Array.from(binString, (m) => m.codePointAt(0));
 }
 
+function decodeProtocol(buffer) {
+  // validate buffer length
+  if (buffer.length < 11) {
+    throw new Error("Buffer too short "
+      + buffer.length
+      + " \"" + (new TextDecoder().decode(buffer))) + "\"";
+  }
+
+  let offset = 0;
+
+  // A: command byte
+  const command = buffer[offset];
+
+  offset += 1;
+
+  // B: counter (2 bytes, big endian)
+  const counter = buffer[offset] << 8 | buffer[offset + 1];
+
+  offset += 2;
+
+  // C: payload length (32 bits, big endian)
+  const payloadLength = (
+    buffer[offset] << 24 |
+    buffer[offset + 1] << 16 |
+    buffer[offset + 2] << 8 |
+    buffer[offset + 3]
+  );
+
+  offset += 4;
+
+  // Validate payload length
+  if (offset + payloadLength + 4 > buffer.length) {
+    throw new Error("Invalid payload length");
+  }
+
+  // D: payload (array of bytes)
+  const payload = buffer.slice(offset, offset + payloadLength);
+
+  offset += payloadLength;
+
+  // F: checksum (FNV-1a, 32 bits, big endian)
+  const checksum = (
+    buffer[offset] << 24 |
+    buffer[offset + 1] << 16 |
+    buffer[offset + 2] << 8 |
+    buffer[offset + 3]
+  );
+
+  // TODO: verify checksum
+
+  return {
+    command,
+    counter,
+    payloadLength,
+    payload,
+  };
+}
+
 function connectWS() {
   const { host, pathname: path, protocol: proto } = window.location;
   const url = `${proto === 'https:' ? 'wss' : 'ws'}://${host}${path === '/' ? '' : path}/ws`
@@ -58,19 +116,26 @@ function connectWS() {
   ws.onmessage = ({ data }) => {
     const reader = new FileReader();
     reader.onload = () => {
-      const array = new Uint8Array(reader.result);
-      const params = array.slice(1);
-      switch (array.slice(0, 1)[0]) {
-        case MSG:
-          terminal.write(params);
+      var array = new Uint8Array(reader.result);
+      while (array.length > 0) {
+        var { command, counter, payloadLength, payload } = decodeProtocol(array);
+        switch (command) {
+          case MSG:
+            terminal.write(new TextDecoder().decode(payload));
+            break;
+          case RESIZE:
+            const [cols, rows] = (new TextDecoder().decode(payload)).split(':');
+            terminal.resize(+rows, +cols);
+            //console.log(`Resized to ${cols}x${rows}`);
+            break
+          default:
+            console.log("not implemented", array);
+            break;
+        }
+        if (array.length <= payloadLength + 11) { // TODO: find a better way to verify if there is more data
           break;
-        case RESIZE:
-          const [cols, rows] = (new TextDecoder().decode(params)).split(':')
-          terminal.resize(+rows, +cols);
-          break
-        default:
-          console.log("not implemented", array);
-          break;
+        }
+        array = array.slice(payloadLength + 11);
       }
     };
     reader.readAsArrayBuffer(data);
