@@ -5,6 +5,7 @@ import (
 	"log"
 
 	"github.com/crgimenes/compterm/constants"
+	"github.com/crgimenes/compterm/protocol"
 	"github.com/crgimenes/compterm/stream"
 	"nhooyr.io/websocket"
 )
@@ -31,9 +32,14 @@ func New(conn *websocket.Conn) *Client {
 // DirectSend sends a message to the client without using the stream
 func (c *Client) DirectSend(prefix byte, p []byte) (n int, err error) {
 	buff := make([]byte, constants.BufferSize)
-	buff[0] = prefix
-	n = copy(buff[1:], p)
-	err = c.conn.Write(context.Background(), websocket.MessageBinary, buff[:n+1])
+	//buff[0] = prefix
+	//n = copy(buff[1:], p)
+	n, err = protocol.Encode(buff, p, prefix, 0)
+	if err != nil {
+		return 0, err
+	}
+
+	err = c.conn.Write(context.Background(), websocket.MessageBinary, buff[:n])
 	if err != nil {
 		if websocket.CloseStatus(err) != websocket.StatusNormalClosure {
 			log.Printf("error writing to websocket: %s, %v\r\n",
@@ -47,9 +53,18 @@ func (c *Client) DirectSend(prefix byte, p []byte) (n int, err error) {
 
 // Send sends a message to the client using the stream
 func (c *Client) Send(prefix byte, p []byte) (n int, err error) {
-	c.sbuff[0] = prefix
-	n = copy(c.sbuff[1:], p)
-	return c.bs.Write(c.sbuff[:n+1])
+	//c.sbuff[0] = prefix
+	//n = copy(c.sbuff[1:], p)
+
+	buff := make([]byte, constants.BufferSize)
+	n, err = protocol.Encode(buff, p, prefix, 0)
+	if err != nil {
+		return 0, err
+	}
+
+	return c.bs.Write(buff[:n])
+
+	//return c.bs.Write(c.sbuff[:n+1])
 }
 
 // Write writes to the stream
