@@ -62,17 +62,12 @@ function decodeProtocol(buffer) {
   offset += 1;
 
   // B: counter (2 bytes, big endian)
-  const counter = buffer[offset] << 8 | buffer[offset + 1];
+    const counter = (new DataView(buffer.slice(offset, offset + 2).buffer)).getUint16(0, false);
 
   offset += 2;
 
   // C: payload length (32 bits, big endian)
-  const payloadLength = (
-    buffer[offset] << 24 |
-    buffer[offset + 1] << 16 |
-    buffer[offset + 2] << 8 |
-    buffer[offset + 3]
-  );
+    const payloadLength = (new DataView(buffer.slice(offset, offset + 4).buffer)).getUint32(0, false);
 
   offset += 4;
 
@@ -87,12 +82,7 @@ function decodeProtocol(buffer) {
   offset += payloadLength;
 
   // F: checksum (FNV-1a, 32 bits, big endian)
-  const checksum = (
-    buffer[offset] << 24 |
-    buffer[offset + 1] << 16 |
-    buffer[offset + 2] << 8 |
-    buffer[offset + 3]
-  );
+    const checksum = (new DataView(buffer.slice(offset, offset + 4).buffer)).getUint32(0, false);
 
   // TODO: verify checksum
 
