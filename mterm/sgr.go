@@ -21,7 +21,7 @@ const (
 
 type Color [3]byte
 
-type sgrState struct {
+type SGRState struct {
 	FG        Color
 	BG        Color
 	UL        Color // underline color
@@ -29,17 +29,17 @@ type sgrState struct {
 	Flags     uint8
 }
 
-// set the set based on CSI parameters
-func (s *sgrState) set(p ...int) error {
+// Set the Set based on CSI parameters
+func (s *SGRState) Set(p ...int) error {
 	if len(p) == 0 {
-		*s = sgrState{}
+		*s = SGRState{}
 	}
 	for i := 0; i < len(p); i++ {
 		c := p[i]
 		sub := p[i:]
 		switch {
 		case c == 0:
-			*s = sgrState{}
+			*s = SGRState{}
 		case c == 1:
 			s.Flags |= FlagBold
 		case c == 21: // double underline?!

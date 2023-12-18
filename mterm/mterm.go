@@ -2,7 +2,6 @@ package mterm
 
 import (
 	"bytes"
-	"cmp"
 	"fmt"
 	"reflect"
 	"runtime"
@@ -17,7 +16,7 @@ import (
 type Cell struct {
 	Char rune
 	nl   bool // new: 2023-12-13 is new line
-	sgrState
+	SGRState
 }
 
 type stateFn func(t *Terminal, r rune) (stateFn, error)
@@ -27,7 +26,7 @@ type Terminal struct {
 	mux    sync.Mutex
 	screen []Cell
 
-	cstate sgrState
+	cstate SGRState
 
 	stateProc stateFn
 
@@ -120,48 +119,82 @@ func (t *Terminal) Resize(rows, cols int) {
 	t.mux.Lock()
 	defer t.mux.Unlock()
 
-	newScreen := make([]Cell, cols*rows)
-	emptyRow := make([]Cell, cols)
+	curRowsSize := len(t.screen) / t.MaxCols
+
+	backRows := max(len(t.screen)/t.MaxCols-t.MaxRows, 0)
+	newScreen := make([]Cell, max(curRowsSize, rows)*cols)
 
 	ni := 0
+	shrink := 0
 	addLine := func(line []Cell) {
-		for i := 0; i < (len(line)-1)/cols; i++ {
-			newScreen = append(newScreen, emptyRow...)
+		orows := 1 + (len(line)-1)/t.MaxCols
+		nrows := 1 + (len(line)-1)/cols
+		rowsDiff := nrows - orows
+
+		switch {
+		case rowsDiff > 0:
+			newScreen = grow(newScreen, rowsDiff*cols)
+		case rowsDiff < 0:
+			shrink += -rowsDiff
 		}
-		for len(newScreen)-ni < len(line) {
-			newScreen = append(newScreen, emptyRow...)
+
+		if ni > len(newScreen) {
+			return
 		}
-		copy(newScreen[ni:], line)
-		ni += len(line)
+		n := copy(newScreen[ni:], line)
+		ni += n
 		if len(line)%cols != 0 {
 			ni += (cols - (ni % cols))
 		}
 	}
 
 	start := 0
-	for i := start; i < len(t.screen); i++ {
+	// up to Cursor perhaps instead of full screen
+	for i := start; i < len(t.screen); {
 		c := t.screen[i]
 		if !c.nl {
+			i++
 			continue
 		}
 		// add logical text line
 		addLine(t.screen[start : i+1])
+		// next line
 		start = i + t.MaxCols - (i % t.MaxCols)
+		i = start
 	}
-	end := start
-	// just check if there's more to print until the end of the screen
-	for i := start; i < len(t.screen); i++ {
-		if t.screen[i].Char > ' ' {
-			end = i
-		}
-	}
-	addLine(t.screen[start:end])
+	copy(newScreen[ni:], t.screen[start:])
 
+	cursorLine := t.cursorLine
+	// 'scroll' up and move cursor up if needed
+	if shrink > 0 {
+		end := max(len(newScreen)-shrink*cols, rows*cols)
+		newScreen = newScreen[:end]
+
+		mv := max(shrink-backRows, 0)
+		cursorLine -= mv
+	}
+	switch {
+	// if new screen is smaller, we shrink if the cursor is at bottom
+	// it will scroll up
+	case rows < t.MaxRows:
+		shrunk := t.MaxRows - rows
+		c := max(cursorLine-(rows-1), 0)
+		shrunk = max(shrunk-c, 0)
+		end := max(len(newScreen)-shrunk*cols, rows*cols)
+		newScreen = newScreen[:end]
+	// if new screen is bigger and we have a backlog, move the cursor until
+	// we don't have any history left
+	case rows > t.MaxRows:
+		grown := rows - t.MaxRows
+		c := min(backRows, grown)
+		cursorLine += c
+	}
+
+	t.cursorCol = min(t.cursorCol, cols-1)
+	t.cursorLine = min(cursorLine, rows-1)
 	t.MaxRows = rows
 	t.MaxCols = cols
 	t.screen = newScreen
-	t.cursorCol = min(t.cursorCol, cols-1)
-	t.cursorLine = min(t.cursorLine, rows-1)
 	t.saveCursor = [2]int{0, 0}
 	t.scrollRegion = [2]int{0, rows} // reset?! or resize
 }
@@ -292,11 +325,11 @@ func (t *Terminal) normal(r rune) (stateFn, error) {
 		}
 		cl := Cell{
 			Char:     r,
-			sgrState: t.cstate,
+			SGRState: t.cstate,
 		}
 		screen := t.screenView()
 		offs := t.cursorCol + t.cursorLine*t.MaxCols
-		if offs >= len(screen) {
+		if offs < 0 || offs >= len(screen) {
 			// Rare, but to be safe..
 			return nil, fmt.Errorf("offset out of bounds: %d", offs)
 		}
@@ -493,16 +526,22 @@ func (t *Terminal) csi() stateFn {
 
 			switch n {
 			case 0: // clear from cursor to end
-				off := t.cursorCol + t.cursorLine*t.MaxCols
-				fill(screen[off:], Cell{sgrState: t.cstate})
+				off := clamp(t.cursorCol+t.cursorLine*t.MaxCols, 0, len(screen))
+				fill(screen[off:], Cell{SGRState: t.cstate})
 				t.cellUpdate++
 			case 1: // clear from beginning to cursor
-				off := t.cursorCol + t.cursorLine*t.MaxCols
-				fill(screen[:off], Cell{sgrState: t.cstate})
+				off := clamp(t.cursorCol+t.cursorLine*t.MaxCols, 0, len(screen))
+				fill(screen[:off], Cell{SGRState: t.cstate})
 				t.cellUpdate++
 			case 2: // clear everything
-				// t.screen = t.screen[:t.MaxRows*t.MaxCols]
-				fill(screen, Cell{sgrState: t.cstate})
+				fill(screen, Cell{SGRState: t.cstate})
+				t.cellUpdate++
+			case 3: // clear scrollback
+				if len(t.screen) <= t.MaxRows*t.MaxCols {
+					break
+				}
+				copy(t.screen, screen)
+				t.screen = t.screen[:t.MaxRows*t.MaxCols]
 				t.cellUpdate++
 			}
 		case 'K': // Erase in Line
@@ -515,13 +554,13 @@ func (t *Terminal) csi() stateFn {
 			line := screen[l : l+t.MaxCols]
 			switch n {
 			case 0: // clear from cursor to end
-				fill(line[t.cursorCol:], Cell{sgrState: t.cstate})
+				fill(line[t.cursorCol:], Cell{SGRState: t.cstate})
 				t.cellUpdate++
 			case 1: // clear from beginning to cursor
-				fill(line[:t.cursorCol], Cell{sgrState: t.cstate})
+				fill(line[:t.cursorCol], Cell{SGRState: t.cstate})
 				t.cellUpdate++
 			case 2: // clear everything
-				fill(line, Cell{sgrState: t.cstate})
+				fill(line, Cell{SGRState: t.cstate})
 				t.cellUpdate++
 			}
 		case 'M': // Delete lines, it will move the rest of the lines up
@@ -555,7 +594,7 @@ func (t *Terminal) csi() stateFn {
 
 			off := t.cursorCol + t.cursorLine*t.MaxCols
 			end := min(off+n, len(screen))
-			fill(screen[off:end], Cell{sgrState: t.cstate})
+			fill(screen[off:end], Cell{SGRState: t.cstate})
 			t.cellUpdate++
 		case 'L': // Insert lines, it will push lines forward
 			n := 1
@@ -568,13 +607,13 @@ func (t *Terminal) csi() stateFn {
 			eoff := clamp(loff+n*t.MaxCols, 0, len(region))
 			dup := slices.Clone(region)
 			copy(region[eoff:], dup[loff:])
-			fill(region[loff:eoff], Cell{sgrState: t.cstate})
+			fill(region[loff:eoff], Cell{SGRState: t.cstate})
 			t.cellUpdate++
 		case '@':
 			// TODO: {lpf} (comment by copilot: Insert blank characters (SP) (default = 1))
 		// SGR
 		case 'm':
-			err := t.cstate.set(p...)
+			err := t.cstate.Set(p...)
 			return (*Terminal).normal, err
 		case 'u':
 			t.cursorLine = t.saveCursor[0]
@@ -599,13 +638,25 @@ func (t *Terminal) csi() stateFn {
 		case 'r':
 			top, bottom := 1, t.MaxRows
 			getParams(p, &top, &bottom)
+
+			switch {
+			// Invert order if top is bigger (alacritty)
+			case top > bottom:
+				top, bottom = bottom, top
+			// Disable scrollRegion if equal (alacritty, xterm)
+			case top == bottom:
+				top, bottom = 1, t.MaxRows
+			}
+
 			t.scrollRegion[0] = clamp(top-1, 0, t.MaxRows)
 			t.scrollRegion[1] = clamp(bottom, 0, t.MaxRows)
+
 			// TODO: this needs some love, it's not working as expected
-			//
+			// some cases it resets cursor, others resets the whole screen
 			switch {
 			case len(p) == 0:
 				// fill(t.screen, Cell{})
+				// Reset backScroll too
 				t.cursorLine = 0
 				t.cursorCol = 0
 			case len(p) == 1:
@@ -658,18 +709,18 @@ func (t *Terminal) screenView() []Cell {
 func (t *Terminal) getScreenAsAnsi(cursor bool) []byte {
 	buf := bytes.NewBuffer(nil)
 	x, y := 0, 0
-	lastState := sgrState{}
+	lastState := SGRState{}
 	screen := t.screenView()
 	for i := range screen {
 		if x >= t.MaxCols {
 			y++
 			x = 0
 			buf.WriteString("\r\n")
-			lastState = sgrState{}
+			lastState = SGRState{}
 		}
 		c := screen[i]
-		if c.sgrState != lastState {
-			lastState = c.sgrState
+		if c.SGRState != lastState {
+			lastState = c.SGRState
 			// different state, we shall reset and set the new state
 			buf.WriteString("\033[0")
 
@@ -730,7 +781,7 @@ func (t *Terminal) getScreenAsAnsi(cursor bool) []byte {
 		if cursor && x == t.cursorCol && y == t.cursorLine {
 			fmt.Fprintf(buf, "\033[7m%c\033[27m", r)
 			x += 1
-			lastState = sgrState{}
+			lastState = SGRState{}
 			continue
 		}
 		buf.WriteRune(r)
@@ -751,35 +802,4 @@ func (t *Terminal) DBG() []byte {
 	defer t.mux.Unlock()
 
 	return t.getScreenAsAnsi(true)
-}
-
-// getParams helper function to get params from a slice
-// if the slice is smaller than the number of params, it will leave the rest as
-// is
-func getParams(param []int, out ...*int) {
-	for i, p := range param {
-		if i >= len(out) {
-			break
-		}
-		*out[i] = p
-	}
-}
-
-// fill fills a slice with a value
-func fill[S ~[]T, T any](s S, v T) {
-	for i := range s {
-		s[i] = v
-	}
-}
-
-// clamp returns the value clamped between s and b
-// similar to min(max(value, smallest),biggest)
-func clamp[T cmp.Ordered](v T, s, b T) T {
-	if v < s {
-		return s
-	}
-	if v > b {
-		return b
-	}
-	return v
 }

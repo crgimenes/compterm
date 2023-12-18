@@ -64,6 +64,7 @@ func main() {
 
 					quoted := fmt.Sprintf("%q", string(sub))
 					// Hacky way to get the offset considering the escaped escape sequences
+					off = max(off-2, 0)
 					quotedLoc := fmt.Sprintf("%q", string(sub[:off-2]))
 					log.Fatalf("Error:\n%s\n\033[%dC^ %v\n", quoted, len(quotedLoc), err)
 				}
@@ -71,6 +72,7 @@ func main() {
 
 			fmt.Printf("\033]0m%s\a", t.Title)
 			fmt.Println("Title: ", t.Title)
+			fmt.Println()
 			lines := strings.Split(string(t.DBG()), "\r\n")
 			for i, line := range lines {
 				fmt.Printf("%02d|%s\033[0m|%02d\n", i, line, i)
