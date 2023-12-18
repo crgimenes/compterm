@@ -241,6 +241,10 @@ func (t *Terminal) nextLine() {
 	case t.cursorLine == t.scrollRegion[1]:
 		t.cursorLine--
 		region := t.screenScrollRegion()
+		if len(region)/t.MaxCols < t.BacklogSize {
+			region = append(region, make([]Cell, t.MaxCols)...)
+			t.cellUpdate++
+		}
 		copy(region, region[t.MaxCols:])
 		fill(region[len(region)-t.MaxCols:], Cell{})
 
