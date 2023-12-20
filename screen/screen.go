@@ -5,14 +5,12 @@ import (
 	"os"
 
 	"github.com/crgimenes/compterm/client"
-	"github.com/crgimenes/compterm/mterm"
 	"github.com/crgimenes/compterm/stream"
 )
 
 type ConnectedClient struct {
 	WritePermission bool
 	wsStreamEnabled bool // Websocket stream enabled
-	mt              *mterm.Terminal
 	Client          *client.Client
 }
 

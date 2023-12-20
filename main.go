@@ -199,12 +199,10 @@ func readMessages(client *client.Client) {
 			return
 		}
 
-		processInput(client, buffer[:n])
-	}
-}
+		// write to pty
+		_, _ = io.Copy(ptmx, strings.NewReader(string(buffer[:n])))
 
-func processInput(client *client.Client, b []byte) {
-	_, _ = io.Copy(ptmx, strings.NewReader(string(b)))
+	}
 }
 
 func mainHandler(w http.ResponseWriter, r *http.Request) {
