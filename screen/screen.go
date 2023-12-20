@@ -1,6 +1,7 @@
 package screen
 
 import (
+	"log"
 	"os"
 
 	"github.com/crgimenes/compterm/client"
@@ -23,7 +24,7 @@ type Screen struct {
 	ptmx    *os.File
 }
 
-func NewScreen(width, height int) *Screen {
+func New(height, width int) *Screen {
 	return &Screen{
 		Width:  width,
 		Height: height,
@@ -33,5 +34,14 @@ func NewScreen(width, height int) *Screen {
 
 // Writer interface
 func (s *Screen) Write(p []byte) (n int, err error) {
-	return 0, nil
+	// write to stdout
+	n, err = os.Stdout.Write(p)
+	if err != nil {
+		log.Printf("error writing to stdout: %s\r\n", err)
+		return
+	}
+
+	// write to websocket
+	s.Stream.Write(p)
+	return
 }

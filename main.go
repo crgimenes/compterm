@@ -19,22 +19,19 @@ import (
 	"github.com/crgimenes/compterm/config"
 	"github.com/crgimenes/compterm/constants"
 	"github.com/crgimenes/compterm/mterm"
+	"github.com/crgimenes/compterm/screen"
 	"github.com/crgimenes/compterm/session"
-	"github.com/crgimenes/compterm/stream"
 
 	"github.com/kr/pty"
 	"golang.org/x/term"
 	"nhooyr.io/websocket"
 )
 
-type termIO struct{}
-
 var (
-	termio                = termIO{}
+	defaultScreen         *screen.Screen
 	mt                    *mterm.Terminal
 	clients               []*client.Client
 	connMutex             sync.Mutex
-	mainStream            = stream.New()
 	ptmx                  *os.File
 	wsStreamEnabled       bool   // Websocket stream enabled
 	GitTag                string = "0.0.0v"
@@ -45,7 +42,7 @@ var (
 func writeAllWS() {
 	msg := make([]byte, constants.BufferSize)
 	for {
-		n, err := mainStream.Read(msg)
+		n, err := defaultScreen.Stream.Read(msg)
 		if err != nil {
 			if err == io.EOF {
 				time.Sleep(100 * time.Millisecond)
@@ -77,19 +74,6 @@ func writeAllWS() {
 		}
 		connMutex.Unlock()
 	}
-}
-
-func (o termIO) Write(p []byte) (n int, err error) {
-	// write to stdout
-	n, err = os.Stdout.Write(p)
-	if err != nil {
-		log.Printf("error writing to stdout: %s\r\n", err)
-		return
-	}
-
-	// write to websocket
-	mainStream.Write(p)
-	return
 }
 
 func sendToAll(command byte, params []byte) {
@@ -147,7 +131,7 @@ func runCmd() {
 
 				mt.Resize(sizeHeight, sizeWidth)
 
-				mainStream.Write([]byte(fmt.Sprintf("\033[8;%d;%dt",
+				defaultScreen.Stream.Write([]byte(fmt.Sprintf("\033[8;%d;%dt",
 					sizeHeight, sizeWidth)))
 
 				if wsStreamEnabled {
@@ -167,7 +151,7 @@ func runCmd() {
 
 	// Copy stdin to the pty and the pty to stdout.
 	go func() { _, _ = io.Copy(ptmx, os.Stdin) }()
-	_, _ = io.Copy(termio, ptmx)
+	_, _ = io.Copy(defaultScreen, ptmx)
 
 	// Wait for the command to finish.
 	err = c.Wait()
@@ -391,6 +375,7 @@ func main() {
 	const cookieName = "compterm"
 	sc = session.New(cookieName)
 
+	defaultScreen = screen.New(24, 80)
 	mt = mterm.New(24, 80)
 
 	go writeAllWS()
