@@ -28,7 +28,8 @@ import (
 )
 
 var (
-	defaultScreen         *screen.Screen
+	screenManager         = screen.NewManager()
+	_, defaultScreen      = screenManager.GetScreenByID(0)
 	mt                    *mterm.Terminal
 	clients               []*client.Client
 	connMutex             sync.Mutex
