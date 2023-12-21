@@ -1,10 +1,12 @@
 package screen
 
 import (
+	"fmt"
 	"log"
 	"os"
 
 	"github.com/crgimenes/compterm/client"
+	"github.com/crgimenes/compterm/mterm"
 	"github.com/crgimenes/compterm/stream"
 )
 
@@ -20,6 +22,7 @@ type Screen struct {
 	Height  int
 	Clients []*ConnectedClient
 	Stream  *stream.Stream
+	mt      *mterm.Terminal
 	ptmx    *os.File
 }
 
@@ -63,11 +66,13 @@ func (m *Manager) GetScreenByTitle(title string) (bool, *Screen) {
 }
 
 func New(height, width int) *Screen {
-	return &Screen{
+	s := &Screen{
 		Width:  width,
 		Height: height,
 		Stream: stream.New(),
+		mt:     mterm.New(height, width),
 	}
+	return s
 }
 
 // Writer interface
@@ -79,7 +84,31 @@ func (s *Screen) Write(p []byte) (n int, err error) {
 		return
 	}
 
+	s.mt.Write(p) // write to mterm buffer
+
 	// write to websocket
 	s.Stream.Write(p)
 	return
+}
+
+// Resize screen
+func (s *Screen) Resize(height, width int) {
+	s.Height = height
+	s.Width = width
+	s.mt.Resize(height, width)
+
+	s.Write([]byte(fmt.Sprintf("\033[8;%d;%dt",
+		s.Height,
+		s.Width,
+	)))
+}
+
+// GetScreenAsANSI returns the screen as ANSI
+func (s *Screen) GetScreenAsANSI() []byte {
+	return s.mt.GetScreenAsAnsi()
+}
+
+// CursorPos() returns the cursor position
+func (s *Screen) CursorPos() (lin, col int) {
+	return s.mt.CursorPos()
 }

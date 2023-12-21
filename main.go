@@ -18,7 +18,6 @@ import (
 	"github.com/crgimenes/compterm/client"
 	"github.com/crgimenes/compterm/config"
 	"github.com/crgimenes/compterm/constants"
-	"github.com/crgimenes/compterm/mterm"
 	"github.com/crgimenes/compterm/screen"
 	"github.com/crgimenes/compterm/session"
 
@@ -30,7 +29,6 @@ import (
 var (
 	screenManager         = screen.NewManager()
 	_, defaultScreen      = screenManager.GetScreenByID(0)
-	mt                    *mterm.Terminal
 	clients               []*client.Client
 	connMutex             sync.Mutex
 	ptmx                  *os.File
@@ -60,8 +58,6 @@ func writeAllWS() {
 			continue
 		}
 
-		mt.Write(msg[:n]) // write to mterm buffer
-
 		connMutex.Lock()
 		for _, c := range clients {
 			cn, err := c.Write(msg[:n])
@@ -70,7 +66,6 @@ func writeAllWS() {
 				n -= cn
 				cn, err = c.Write(msg[:n])
 			}
-			//_ = cn
 			if err != nil {
 				log.Printf("error writing to websocket: %s\r\n", err)
 				removeConnection(c)
@@ -133,10 +128,7 @@ func runCmd() {
 					log.Fatalf("error getting size: %s\r\n", err)
 				}
 
-				mt.Resize(sizeHeight, sizeWidth)
-
-				defaultScreen.Stream.Write([]byte(fmt.Sprintf("\033[8;%d;%dt",
-					sizeHeight, sizeWidth)))
+				defaultScreen.Resize(sizeHeight, sizeWidth)
 
 				if wsStreamEnabled {
 					sendToAll(constants.RESIZE,
@@ -265,13 +257,13 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 			sizeHeight, sizeWidth)))
 
 		// get screen as ansi from mterm buffer
-		msg := mt.GetScreenAsAnsi()
+		msg := defaultScreen.GetScreenAsANSI()
 
 		// send screen to xtermjs terminal
 		client.DirectSend(constants.MSG, []byte(msg))
 
 		// set cursor position to the current position
-		line, col := mt.CursorPos()
+		line, col := defaultScreen.CursorPos()
 		client.DirectSend(constants.MSG, []byte(fmt.Sprintf("\033[%d;%dH", line+1, col+1)))
 	}
 
@@ -376,9 +368,6 @@ func main() {
 
 	const cookieName = "compterm"
 	sc = session.New(cookieName)
-
-	defaultScreen = screen.New(24, 80)
-	mt = mterm.New(24, 80)
 
 	go writeAllWS()
 	go runCmd()
