@@ -69,7 +69,8 @@ func (c *Client) Send(prefix byte, p []byte) (n int, err error) {
 
 // Write writes to the stream
 func (c *Client) Write(p []byte) (n int, err error) {
-	return c.bs.Write(p)
+	//return c.bs.Write(p)
+	return c.Send(constants.MSG, p)
 }
 
 // Read reads from the stream

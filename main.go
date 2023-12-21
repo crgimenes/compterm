@@ -18,23 +18,19 @@ import (
 	"github.com/crgimenes/compterm/client"
 	"github.com/crgimenes/compterm/config"
 	"github.com/crgimenes/compterm/constants"
-	"github.com/crgimenes/compterm/mterm"
+	"github.com/crgimenes/compterm/screen"
 	"github.com/crgimenes/compterm/session"
-	"github.com/crgimenes/compterm/stream"
 
 	"github.com/kr/pty"
 	"golang.org/x/term"
 	"nhooyr.io/websocket"
 )
 
-type termIO struct{}
-
 var (
-	termio                = termIO{}
-	mt                    *mterm.Terminal
+	screenManager         = screen.NewManager()
+	_, defaultScreen      = screenManager.GetScreenByID(0)
 	clients               []*client.Client
 	connMutex             sync.Mutex
-	mainStream            = stream.New()
 	ptmx                  *os.File
 	wsStreamEnabled       bool   // Websocket stream enabled
 	GitTag                string = "0.0.0v"
@@ -45,7 +41,7 @@ var (
 func writeAllWS() {
 	msg := make([]byte, constants.BufferSize)
 	for {
-		n, err := mainStream.Read(msg)
+		n, err := defaultScreen.Stream.Read(msg)
 		if err != nil {
 			if err == io.EOF {
 				time.Sleep(100 * time.Millisecond)
@@ -62,14 +58,14 @@ func writeAllWS() {
 			continue
 		}
 
-		mt.Write(msg[:n]) // write to mterm buffer
-
 		connMutex.Lock()
 		for _, c := range clients {
-			cn, err := c.Send(
-				constants.MSG,
-				msg[:n]) // TODO: check if cn < n and if so, write the rest of the buffer
-			_ = cn // TODO: remove this line
+			cn, err := c.Write(msg[:n])
+			for cn < n && err == nil {
+				msg = msg[cn:]
+				n -= cn
+				cn, err = c.Write(msg[:n])
+			}
 			if err != nil {
 				log.Printf("error writing to websocket: %s\r\n", err)
 				removeConnection(c)
@@ -77,19 +73,6 @@ func writeAllWS() {
 		}
 		connMutex.Unlock()
 	}
-}
-
-func (o termIO) Write(p []byte) (n int, err error) {
-	// write to stdout
-	n, err = os.Stdout.Write(p)
-	if err != nil {
-		log.Printf("error writing to stdout: %s\r\n", err)
-		return
-	}
-
-	// write to websocket
-	mainStream.Write(p)
-	return
 }
 
 func sendToAll(command byte, params []byte) {
@@ -145,10 +128,7 @@ func runCmd() {
 					log.Fatalf("error getting size: %s\r\n", err)
 				}
 
-				mt.Resize(sizeHeight, sizeWidth)
-
-				mainStream.Write([]byte(fmt.Sprintf("\033[8;%d;%dt",
-					sizeHeight, sizeWidth)))
+				defaultScreen.Resize(sizeHeight, sizeWidth)
 
 				if wsStreamEnabled {
 					sendToAll(constants.RESIZE,
@@ -167,7 +147,7 @@ func runCmd() {
 
 	// Copy stdin to the pty and the pty to stdout.
 	go func() { _, _ = io.Copy(ptmx, os.Stdin) }()
-	_, _ = io.Copy(termio, ptmx)
+	_, _ = io.Copy(defaultScreen, ptmx)
 
 	// Wait for the command to finish.
 	err = c.Wait()
@@ -215,12 +195,10 @@ func readMessages(client *client.Client) {
 			return
 		}
 
-		processInput(client, buffer[:n])
-	}
-}
+		// write to pty
+		_, _ = io.Copy(ptmx, strings.NewReader(string(buffer[:n])))
 
-func processInput(client *client.Client, b []byte) {
-	_, _ = io.Copy(ptmx, strings.NewReader(string(b)))
+	}
 }
 
 func mainHandler(w http.ResponseWriter, r *http.Request) {
@@ -279,13 +257,13 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 			sizeHeight, sizeWidth)))
 
 		// get screen as ansi from mterm buffer
-		msg := mt.GetScreenAsAnsi()
+		msg := defaultScreen.GetScreenAsANSI()
 
 		// send screen to xtermjs terminal
 		client.DirectSend(constants.MSG, []byte(msg))
 
 		// set cursor position to the current position
-		line, col := mt.CursorPos()
+		line, col := defaultScreen.CursorPos()
 		client.DirectSend(constants.MSG, []byte(fmt.Sprintf("\033[%d;%dH", line+1, col+1)))
 	}
 
@@ -390,8 +368,6 @@ func main() {
 
 	const cookieName = "compterm"
 	sc = session.New(cookieName)
-
-	mt = mterm.New(24, 80)
 
 	go writeAllWS()
 	go runCmd()
