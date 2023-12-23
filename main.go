@@ -32,7 +32,6 @@ var (
 	clients               []*client.Client
 	connMutex             sync.Mutex
 	ptmx                  *os.File
-	wsStreamEnabled       bool   // Websocket stream enabled
 	GitTag                string = "0.0.0v"
 	sizeWidth, sizeHeight int
 	sc                    *session.Control
@@ -51,11 +50,6 @@ func writeAllWS() {
 
 			removeAllConnections()
 			os.Exit(1)
-		}
-
-		// only write to websocket and mterm buffer if wsStreamEnabled is true
-		if !wsStreamEnabled {
-			continue
 		}
 
 		connMutex.Lock()
@@ -130,11 +124,9 @@ func runCmd() {
 
 				defaultScreen.Resize(sizeHeight, sizeWidth)
 
-				if wsStreamEnabled {
-					sendToAll(constants.RESIZE,
-						[]byte(fmt.Sprintf("%d:%d",
-							sizeHeight, sizeWidth)))
-				}
+				sendToAll(constants.RESIZE,
+					[]byte(fmt.Sprintf("%d:%d",
+						sizeHeight, sizeWidth)))
 
 			case syscall.SIGTERM, os.Interrupt:
 				removeAllConnections()
@@ -185,22 +177,6 @@ func removeConnection(c *client.Client) {
 	connMutex.Unlock()
 }
 
-func readMessages(client *client.Client) {
-	for {
-		buffer := make([]byte, constants.BufferSize)
-		n, err := client.ReadFromWS(buffer)
-		if err != nil {
-			log.Printf("error reading from websocket: %s\r\n", err)
-			removeConnection(client)
-			return
-		}
-
-		// write to pty
-		_, _ = io.Copy(ptmx, strings.NewReader(string(buffer[:n])))
-
-	}
-}
-
 func mainHandler(w http.ResponseWriter, r *http.Request) {
 	sid, sd, ok := sc.Get(r)
 	if !ok {
@@ -247,32 +223,30 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 
 	client.DirectSend(constants.MSG, []byte(motd))
 
-	if wsStreamEnabled {
-		// send current terminal size (resize the xtermjs terminal)
-		client.DirectSend(constants.RESIZE,
-			[]byte(fmt.Sprintf("%d:%d", sizeHeight, sizeWidth)))
+	// send current terminal size (resize the xtermjs terminal)
+	client.DirectSend(constants.RESIZE,
+		[]byte(fmt.Sprintf("%d:%d", sizeHeight, sizeWidth)))
 
-		// set terminal size, clear screen and set cursor to 1,1
-		client.DirectSend(constants.MSG, []byte(fmt.Sprintf("\033[8;%d;%dt\033[2J\033[0;0H",
-			sizeHeight, sizeWidth)))
+	// set terminal size, clear screen and set cursor to 1,1
+	client.DirectSend(constants.MSG, []byte(fmt.Sprintf("\033[8;%d;%dt\033[2J\033[0;0H",
+		sizeHeight, sizeWidth)))
 
-		// get screen as ansi from mterm buffer
-		msg := defaultScreen.GetScreenAsANSI()
+	// get screen as ansi from mterm buffer
+	msg := defaultScreen.GetScreenAsANSI()
 
-		// send screen to xtermjs terminal
-		client.DirectSend(constants.MSG, []byte(msg))
+	// send screen to xtermjs terminal
+	client.DirectSend(constants.MSG, []byte(msg))
 
-		// set cursor position to the current position
-		line, col := defaultScreen.CursorPos()
-		client.DirectSend(constants.MSG, []byte(fmt.Sprintf("\033[%d;%dH", line+1, col+1)))
-	}
+	// set cursor position to the current position
+	line, col := defaultScreen.CursorPos()
+	client.DirectSend(constants.MSG, []byte(fmt.Sprintf("\033[%d;%dH", line+1, col+1)))
 
 	connMutex.Lock()
 	clients = append(clients, client)
 	connMutex.Unlock()
 
 	go client.WriteLoop()
-	// go readMessages(client)
+	//go client.ReadLoop(ptmx)
 }
 
 func serveHTTP() {
@@ -313,8 +287,6 @@ func apiHandler(w http.ResponseWriter, r *http.Request) {
 	case "enable-ws-stream":
 		// curl -X GET http://localhost:2201/api/action/enable-ws-stream
 
-		wsStreamEnabled = true
-
 		sendToAll(
 			constants.MSG,
 			[]byte(fmt.Sprintf("\033[8;%d;%dt\033[2J\033[0;0H", sizeHeight, sizeWidth)))
@@ -324,7 +296,6 @@ func apiHandler(w http.ResponseWriter, r *http.Request) {
 	case "disable-ws-stream":
 		// curl -X GET http://localhost:2201/api/action/disable-ws-stream
 
-		wsStreamEnabled = false
 	case "get-version":
 		// curl -X GET http://localhost:2201/api/action/get-version
 
