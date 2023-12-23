@@ -118,7 +118,7 @@ func (s *Screen) CursorPos() (lin, col int) {
 	return s.mt.CursorPos()
 }
 
-func (s *Screen) Exec(cmd string, stdin, stdout, stderr io.ReadWriter) error {
+func (s *Screen) Exec(cmd string, stdin io.Reader, stdout io.Writer, stderr io.Writer) error {
 	scmd := strings.Split(cmd, " ")
 	c := exec.Command(scmd[0], scmd[1:]...)
 
