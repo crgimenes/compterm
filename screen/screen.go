@@ -2,12 +2,17 @@ package screen
 
 import (
 	"fmt"
+	"io"
 	"log"
 	"os"
+	"os/exec"
+	"strings"
 
 	"github.com/crgimenes/compterm/client"
 	"github.com/crgimenes/compterm/mterm"
 	"github.com/crgimenes/compterm/stream"
+	"github.com/kr/pty"
+	"golang.org/x/term"
 )
 
 type ConnectedClient struct {
@@ -111,4 +116,29 @@ func (s *Screen) GetScreenAsANSI() []byte {
 // CursorPos() returns the cursor position
 func (s *Screen) CursorPos() (lin, col int) {
 	return s.mt.CursorPos()
+}
+
+func (s *Screen) Exec(cmd string, stdin, stdout, stderr io.ReadWriter) error {
+	scmd := strings.Split(cmd, " ")
+	c := exec.Command(scmd[0], scmd[1:]...)
+
+	ptmx, err := pty.Start(c)
+	if err != nil {
+		panic(err)
+	}
+	defer ptmx.Close()
+
+	_, err = term.MakeRaw(int(ptmx.Fd()))
+	if err != nil {
+		return err
+	}
+
+	c.Stderr = stderr
+
+	go func() {
+		io.Copy(ptmx, stdin)
+	}()
+	io.Copy(stdout, ptmx)
+
+	return c.Wait()
 }
