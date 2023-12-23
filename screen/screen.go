@@ -12,7 +12,6 @@ import (
 	"github.com/crgimenes/compterm/mterm"
 	"github.com/crgimenes/compterm/stream"
 	"github.com/kr/pty"
-	"golang.org/x/term"
 )
 
 type ConnectedClient struct {
@@ -124,20 +123,13 @@ func (s *Screen) Exec(cmd string, stdin io.Reader, stdout io.Writer, stderr io.W
 
 	ptmx, err := pty.Start(c)
 	if err != nil {
-		panic(err)
+		return err
 	}
 	defer ptmx.Close()
 
-	_, err = term.MakeRaw(int(ptmx.Fd()))
-	if err != nil {
-		return err
-	}
-
 	c.Stderr = stderr
 
-	go func() {
-		io.Copy(ptmx, stdin)
-	}()
+	go io.Copy(ptmx, stdin)
 	io.Copy(stdout, ptmx)
 
 	return c.Wait()
