@@ -14,21 +14,19 @@ import (
 )
 
 type Client struct {
-	bs          *stream.Stream
-	conn        *websocket.Conn
-	localBuffer []byte
-	sbuff       []byte
-	IP          string
-	Nick        string
-	SessionID   string
+	bs        *stream.Stream
+	conn      *websocket.Conn
+	sbuff     []byte
+	IP        string
+	Nick      string
+	SessionID string
 }
 
 func New(conn *websocket.Conn) *Client {
 	return &Client{
-		bs:          stream.New(),
-		conn:        conn,
-		localBuffer: make([]byte, constants.BufferSize),
-		sbuff:       make([]byte, constants.BufferSize),
+		bs:    stream.New(),
+		conn:  conn,
+		sbuff: make([]byte, constants.BufferSize),
 	}
 }
 
@@ -99,14 +97,15 @@ func (c *Client) Close() error {
 
 // WriteLoop writes to the websocket
 func (c *Client) WriteLoop() {
+	buff := make([]byte, constants.BufferSize)
 	for {
-		n, err := c.bs.Read(c.localBuffer)
+		n, err := c.bs.Read(buff)
 		if err != nil {
 			log.Printf("error reading from byte stream: %s\r\n", err)
 			return
 		}
 
-		err = c.conn.Write(context.Background(), websocket.MessageBinary, c.localBuffer[:n])
+		err = c.conn.Write(context.Background(), websocket.MessageBinary, buff[:n])
 		if err != nil {
 			if websocket.CloseStatus(err) != websocket.StatusNormalClosure {
 				log.Printf("error writing to websocket: %s, %v\r\n",

@@ -246,7 +246,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 	connMutex.Unlock()
 
 	go client.WriteLoop()
-	go client.ReadLoop(ptmx)
+	//go client.ReadLoop(ptmx)
 }
 
 func serveHTTP() {
