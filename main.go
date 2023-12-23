@@ -177,22 +177,6 @@ func removeConnection(c *client.Client) {
 	connMutex.Unlock()
 }
 
-func readMessages(client *client.Client) {
-	for {
-		buffer := make([]byte, constants.BufferSize)
-		n, err := client.ReadFromWS(buffer)
-		if err != nil {
-			log.Printf("error reading from websocket: %s\r\n", err)
-			removeConnection(client)
-			return
-		}
-
-		// write to pty
-		_, _ = io.Copy(ptmx, strings.NewReader(string(buffer[:n])))
-
-	}
-}
-
 func mainHandler(w http.ResponseWriter, r *http.Request) {
 	sid, sd, ok := sc.Get(r)
 	if !ok {
@@ -262,7 +246,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 	connMutex.Unlock()
 
 	go client.WriteLoop()
-	// go readMessages(client)
+	go client.ReadLoop(ptmx)
 }
 
 func serveHTTP() {

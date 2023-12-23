@@ -2,7 +2,10 @@ package client
 
 import (
 	"context"
+	"io"
 	"log"
+	"os"
+	"strings"
 
 	"github.com/crgimenes/compterm/constants"
 	"github.com/crgimenes/compterm/protocol"
@@ -110,6 +113,26 @@ func (c *Client) WriteLoop() {
 					err, websocket.CloseStatus(err)) // TODO: send to file, not the screen
 			}
 			// removeConnection(c)
+			return
+		}
+	}
+}
+
+func (c *Client) ReadLoop(ptmx *os.File) {
+	buffer := make([]byte, constants.BufferSize)
+	for {
+		n, err := c.ReadFromWS(buffer)
+		if err != nil {
+			log.Printf("error reading from websocket: %s\r\n", err)
+			//removeConnection(client)
+			return
+		}
+
+		// write to pty
+		_, err = io.Copy(ptmx, strings.NewReader(string(buffer[:n])))
+		if err != nil {
+			log.Printf("error writing to pty: %s\r\n", err)
+			//removeConnection(client)
 			return
 		}
 	}
