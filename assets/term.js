@@ -62,12 +62,12 @@ function decodeProtocol(buffer) {
   offset += 1;
 
   // B: counter (2 bytes, big endian)
-    const counter = (new DataView(buffer.slice(offset, offset + 2).buffer)).getUint16(0, false);
+  const counter = (new DataView(buffer.slice(offset, offset + 2).buffer)).getUint16(0, false);
 
   offset += 2;
 
   // C: payload length (32 bits, big endian)
-    const payloadLength = (new DataView(buffer.slice(offset, offset + 4).buffer)).getUint32(0, false);
+  const payloadLength = (new DataView(buffer.slice(offset, offset + 4).buffer)).getUint32(0, false);
 
   offset += 4;
 
@@ -82,7 +82,7 @@ function decodeProtocol(buffer) {
   offset += payloadLength;
 
   // F: checksum (FNV-1a, 32 bits, big endian)
-    const checksum = (new DataView(buffer.slice(offset, offset + 4).buffer)).getUint32(0, false);
+  const checksum = (new DataView(buffer.slice(offset, offset + 4).buffer)).getUint32(0, false);
 
   // TODO: verify checksum
 
@@ -116,7 +116,7 @@ function connectWS() {
           case RESIZE:
             const [cols, rows] = (new TextDecoder().decode(payload)).split(':');
             terminal.resize(+rows, +cols);
-            //console.log(`Resized to ${cols}x${rows}`);
+            console.log(`Resized to ${cols}x${rows}`);
             break
           default:
             console.log("not implemented", array);
@@ -141,6 +141,8 @@ function connectWS() {
   };
 
   terminal.onKey(({ key }) => ws.send(key));
+  terminal.onTitleChange((title) => document.title = title);
+  terminal.onerror = (err) => console.log(err);
 }
 
 connectWS();

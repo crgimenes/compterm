@@ -215,38 +215,43 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 
 	motd := config.CFG.MOTD
 
-	if motd == "" {
-		// azul claro
-		motd = "\033[1;36mcompterm\033[0m " +
-			GitTag + "\r\nWelcome to compterm, please wait for the command to start...\r\n"
-	}
-
-	client.DirectSend(constants.MSG, []byte(motd))
-
-	// send current terminal size (resize the xtermjs terminal)
-	client.DirectSend(constants.RESIZE,
-		[]byte(fmt.Sprintf("%d:%d", sizeHeight, sizeWidth)))
-
-	// set terminal size, clear screen and set cursor to 1,1
-	client.DirectSend(constants.MSG, []byte(fmt.Sprintf("\033[8;%d;%dt\033[2J\033[0;0H",
-		sizeHeight, sizeWidth)))
-
-	// get screen as ansi from mterm buffer
-	msg := defaultScreen.GetScreenAsANSI()
-
-	// send screen to xtermjs terminal
-	client.DirectSend(constants.MSG, []byte(msg))
-
-	// set cursor position to the current position
-	line, col := defaultScreen.CursorPos()
-	client.DirectSend(constants.MSG, []byte(fmt.Sprintf("\033[%d;%dH", line+1, col+1)))
-
 	connMutex.Lock()
 	clients = append(clients, client)
 	connMutex.Unlock()
 
 	go client.WriteLoop()
 	//go client.ReadLoop(ptmx)
+
+	runtime.Gosched()
+
+	///////////////////////////////////////////////
+
+	if motd == "" {
+		// azul claro
+		motd = "\033[1;36mcompterm\033[0m " +
+			GitTag + "\r\nWelcome to compterm, please wait for the command to start...\r\n"
+	}
+
+	client.Send(constants.MSG, []byte(motd))
+
+	// set terminal size, clear screen and set cursor to 1,1
+	client.Send(constants.MSG, []byte(fmt.Sprintf("\033[8;%d;%dt\033[0;0H",
+		sizeHeight, sizeWidth)))
+
+	// send current terminal size (resize the xtermjs terminal)
+	client.Send(constants.RESIZE,
+		[]byte(fmt.Sprintf("%d:%d", sizeHeight, sizeWidth)))
+
+	// get screen as ansi from mterm buffer
+	msg := defaultScreen.GetScreenAsANSI()
+
+	// send screen to xtermjs terminal
+	client.Send(constants.MSG, []byte(msg))
+
+	// set cursor position to the current position
+	line, col := defaultScreen.CursorPos()
+	client.DirectSend(constants.MSG, []byte(fmt.Sprintf("\033[%d;%dH", line+1, col+1)))
+
 }
 
 func serveHTTP() {

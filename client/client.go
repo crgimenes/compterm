@@ -54,9 +54,6 @@ func (c *Client) DirectSend(prefix byte, p []byte) (n int, err error) {
 
 // Send sends a message to the client using the stream
 func (c *Client) Send(prefix byte, p []byte) (n int, err error) {
-	//c.sbuff[0] = prefix
-	//n = copy(c.sbuff[1:], p)
-
 	buff := make([]byte, constants.BufferSize)
 	n, err = protocol.Encode(buff, p, prefix, 0)
 	if err != nil {
@@ -64,13 +61,10 @@ func (c *Client) Send(prefix byte, p []byte) (n int, err error) {
 	}
 
 	return c.bs.Write(buff[:n])
-
-	//return c.bs.Write(c.sbuff[:n+1])
 }
 
 // Write writes to the stream
 func (c *Client) Write(p []byte) (n int, err error) {
-	//return c.bs.Write(p)
 	return c.Send(constants.MSG, p)
 }
 
