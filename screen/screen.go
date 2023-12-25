@@ -8,10 +8,10 @@ import (
 	"os/exec"
 	"strings"
 
+	"github.com/creack/pty"
 	"github.com/crgimenes/compterm/client"
 	"github.com/crgimenes/compterm/mterm"
 	"github.com/crgimenes/compterm/stream"
-	"github.com/kr/pty"
 )
 
 type ConnectedClient struct {
