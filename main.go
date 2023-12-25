@@ -21,7 +21,7 @@ import (
 	"github.com/crgimenes/compterm/screen"
 	"github.com/crgimenes/compterm/session"
 
-	"github.com/kr/pty"
+	"github.com/creack/pty"
 	"golang.org/x/term"
 	"nhooyr.io/websocket"
 )
