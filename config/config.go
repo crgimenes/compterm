@@ -9,6 +9,7 @@ import (
 )
 
 type Config struct {
+	CFGPath   string
 	Debug     bool
 	Listen    string
 	APIListen string
@@ -52,6 +53,8 @@ func Load() error {
 		"debug", false, "Enable debug mode")
 
 	flag.Parse()
+
+	CFG.CFGPath = fullpath
 
 	return err
 }

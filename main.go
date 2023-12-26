@@ -82,6 +82,9 @@ func sendToAll(command byte, params []byte) {
 }
 
 func runCmd() {
+	// clean screen
+	//os.Stdout.WriteString("\033[2J\033[0;0H")
+
 	var err error
 	cmdAux := config.CFG.Command
 	cmd := strings.Split(cmdAux, " ")
@@ -119,7 +122,6 @@ func runCmd() {
 
 	// Close the websocket connections
 	removeAllConnections()
-	restoreTerm()
 }
 
 func removeAllConnections() {
@@ -319,31 +321,51 @@ func updateTerminalSize() {
 
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile | log.Lmicroseconds)
-	logFile, _ := os.Create("compterm.log")
-	log.SetOutput(logFile)
-
-	log.Printf("compterm version %s\n", GitTag)
-	log.Printf("pid: %d\r\n", os.Getpid())
 
 	err := config.Load()
 	if err != nil {
 		log.Fatalf("error loading config: %s\n", err)
 	}
 
+	// verify if there is a pid file
+	pidFile := config.CFG.CFGPath + "/compterm.pid"
+	_, err = os.Stat(pidFile)
+	if err == nil {
+		b, err := os.ReadFile(pidFile)
+		if err != nil {
+			log.Fatalf("error reading pid file: %s\n", err)
+		}
+		fmt.Printf("There is already a compterm running, pid: %s\n", b)
+		os.Exit(1)
+	}
+
+	// create pid file
+	err = os.WriteFile(pidFile, []byte(fmt.Sprintf("%d", os.Getpid())), 0640)
+	if err != nil {
+		log.Fatalf("error writing pid file: %s\n", err)
+	}
+
+	logFile := config.CFG.CFGPath + "/compterm.log"
+	f, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0640)
+	if err != nil {
+		log.Fatalf("error opening log file: %s %s\n", logFile, err)
+	}
+	log.SetOutput(f)
+
+	log.Printf("compterm version %s\n", GitTag)
+	log.Printf("pid: %d\n", os.Getpid())
+
 	// Handle signals
 	ch := make(chan os.Signal, 1)
-	signal.Notify(ch, syscall.SIGWINCH, syscall.SIGTERM, os.Interrupt)
+	signal.Notify(ch, syscall.SIGWINCH) //, syscall.SIGTERM, os.Interrupt)
 	go func() {
 		for caux := range ch {
 			switch caux {
 			case syscall.SIGWINCH:
 				updateTerminalSize()
-			case syscall.SIGTERM, os.Interrupt:
-				removeAllConnections()
-				// reset terminal
-				os.Stdout.WriteString("\033[0m")
-				//restoreTerm()
-				os.Exit(0)
+				//case syscall.SIGTERM, os.Interrupt:
+				//	removeAllConnections()
+				//	os.Exit(0)
 			}
 		}
 	}()
