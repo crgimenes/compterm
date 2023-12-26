@@ -210,13 +210,13 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 	rows, columns := defaultScreen.Size()
 	crows, ccolumns := defaultScreen.CursorPos()
 
-	// send current terminal size (resize the xtermjs terminal)
-	client.Send(constants.RESIZE,
-		[]byte(fmt.Sprintf("%d:%d", rows, columns)))
-
 	// set terminal size, clear screen and set cursor to 0,0
 	client.Send(constants.MSG, []byte(fmt.Sprintf("\033[8;%d;%dt\033[0;0H",
 		rows, columns)))
+
+	// send current terminal size (resize the xtermjs terminal)
+	client.Send(constants.RESIZE,
+		[]byte(fmt.Sprintf("%d:%d", rows, columns)))
 
 	// get screen as ansi from mterm buffer
 	msg := defaultScreen.GetScreenAsANSI()
@@ -344,6 +344,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("error writing pid file: %s\n", err)
 	}
+	defer os.Remove(pidFile)
 
 	logFile := config.CFG.CFGPath + "/compterm.log"
 	f, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0640)
