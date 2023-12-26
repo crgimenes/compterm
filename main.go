@@ -120,7 +120,6 @@ func runCmd() {
 	// Close the websocket connections
 	removeAllConnections()
 	restoreTerm()
-	os.Exit(0)
 }
 
 func removeAllConnections() {
@@ -356,10 +355,10 @@ func main() {
 	sc = session.New(cookieName)
 
 	go writeAllWS()
-	go runCmd()
 	go serveAPI()
-
+	go serveHTTP()
 	runtime.Gosched()
 
-	serveHTTP()
+	runCmd()
+
 }
