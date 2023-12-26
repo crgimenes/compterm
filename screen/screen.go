@@ -2,13 +2,9 @@ package screen
 
 import (
 	"fmt"
-	"io"
 	"log"
 	"os"
-	"os/exec"
-	"strings"
 
-	"github.com/creack/pty"
 	"github.com/crgimenes/compterm/client"
 	"github.com/crgimenes/compterm/mterm"
 	"github.com/crgimenes/compterm/stream"
@@ -22,8 +18,8 @@ type ConnectedClient struct {
 
 type Screen struct {
 	Title   string
-	Width   int
-	Height  int
+	Columns int
+	Rows    int
 	Clients []*ConnectedClient
 	Stream  *stream.Stream
 	mt      *mterm.Terminal
@@ -69,12 +65,12 @@ func (m *Manager) GetScreenByTitle(title string) (bool, *Screen) {
 	return false, nil
 }
 
-func New(height, width int) *Screen {
+func New(rows, columns int) *Screen {
 	s := &Screen{
-		Width:  width,
-		Height: height,
-		Stream: stream.New(),
-		mt:     mterm.New(height, width),
+		Columns: columns,
+		Rows:    rows,
+		Stream:  stream.New(),
+		mt:      mterm.New(rows, columns),
 	}
 	return s
 }
@@ -96,15 +92,20 @@ func (s *Screen) Write(p []byte) (n int, err error) {
 }
 
 // Resize screen
-func (s *Screen) Resize(height, width int) {
-	s.Height = height
-	s.Width = width
-	s.mt.Resize(height, width)
+func (s *Screen) Resize(rows, columns int) {
+	s.Rows = rows
+	s.Columns = columns
+	s.mt.Resize(rows, columns)
 
 	s.Write([]byte(fmt.Sprintf("\033[8;%d;%dt",
-		s.Height,
-		s.Width,
+		s.Rows,
+		s.Columns,
 	)))
+}
+
+// Get screen size
+func (s *Screen) Size() (rows, columns int) {
+	return s.Rows, s.Columns
 }
 
 // GetScreenAsANSI returns the screen as ANSI
@@ -113,24 +114,6 @@ func (s *Screen) GetScreenAsANSI() []byte {
 }
 
 // CursorPos() returns the cursor position
-func (s *Screen) CursorPos() (lin, col int) {
+func (s *Screen) CursorPos() (rows, columns int) {
 	return s.mt.CursorPos()
-}
-
-func (s *Screen) Exec(cmd string, stdin io.Reader, stdout io.Writer, stderr io.Writer) error {
-	scmd := strings.Split(cmd, " ")
-	c := exec.Command(scmd[0], scmd[1:]...)
-
-	ptmx, err := pty.Start(c)
-	if err != nil {
-		return err
-	}
-	defer ptmx.Close()
-
-	c.Stderr = stderr
-
-	go io.Copy(ptmx, stdin)
-	io.Copy(stdout, ptmx)
-
-	return c.Wait()
 }

@@ -27,14 +27,13 @@ import (
 )
 
 var (
-	screenManager         = screen.NewManager()
-	_, defaultScreen      = screenManager.GetScreenByID(0)
-	clients               []*client.Client
-	connMutex             sync.Mutex
-	ptmx                  *os.File
-	GitTag                string = "0.0.0v"
-	sizeWidth, sizeHeight int
-	sc                    *session.Control
+	screenManager    = screen.NewManager()
+	_, defaultScreen = screenManager.GetScreenByID(0)
+	clients          []*client.Client
+	connMutex        sync.Mutex
+	ptmx             *os.File
+	GitTag           string = "0.0.0v"
+	sc               *session.Control
 )
 
 func writeAllWS() {
@@ -106,36 +105,7 @@ func runCmd() {
 	}
 	defer restoreTerm()
 
-	// Handle signals
-	ch := make(chan os.Signal, 1)
-	signal.Notify(ch, syscall.SIGWINCH, syscall.SIGTERM, os.Interrupt)
-	go func() {
-		for caux := range ch {
-			switch caux {
-			case syscall.SIGWINCH:
-				// Update window size.
-				_ = pty.InheritSize(os.Stdin, ptmx)
-				var err error
-				sizeWidth, sizeHeight, err = term.GetSize(
-					int(os.Stdin.Fd()))
-				if err != nil {
-					log.Fatalf("error getting size: %s\r\n", err)
-				}
-
-				defaultScreen.Resize(sizeHeight, sizeWidth)
-
-				sendToAll(constants.RESIZE,
-					[]byte(fmt.Sprintf("%d:%d",
-						sizeHeight, sizeWidth)))
-
-			case syscall.SIGTERM, os.Interrupt:
-				removeAllConnections()
-				restoreTerm()
-				os.Exit(0)
-			}
-		}
-	}()
-	ch <- syscall.SIGWINCH // Initial resize.
+	pty.InheritSize(os.Stdin, ptmx)
 
 	// Copy stdin to the pty and the pty to stdout.
 	go func() { _, _ = io.Copy(ptmx, os.Stdin) }()
@@ -223,6 +193,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 	//go client.ReadLoop(ptmx)
 
 	runtime.Gosched()
+	// TODO: make sure the client is ready to receive messages
 
 	///////////////////////////////////////////////
 
@@ -234,13 +205,17 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 
 	client.Send(constants.MSG, []byte(motd))
 
-	// set terminal size, clear screen and set cursor to 1,1
-	client.Send(constants.MSG, []byte(fmt.Sprintf("\033[8;%d;%dt\033[0;0H",
-		sizeHeight, sizeWidth)))
+	// get terminal size
+	rows, columns := defaultScreen.Size()
+	crows, ccolumns := defaultScreen.CursorPos()
 
 	// send current terminal size (resize the xtermjs terminal)
 	client.Send(constants.RESIZE,
-		[]byte(fmt.Sprintf("%d:%d", sizeHeight, sizeWidth)))
+		[]byte(fmt.Sprintf("%d:%d", rows, columns)))
+
+	// set terminal size, clear screen and set cursor to 0,0
+	client.Send(constants.MSG, []byte(fmt.Sprintf("\033[8;%d;%dt\033[0;0H",
+		rows, columns)))
 
 	// get screen as ansi from mterm buffer
 	msg := defaultScreen.GetScreenAsANSI()
@@ -249,9 +224,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 	client.Send(constants.MSG, []byte(msg))
 
 	// set cursor position to the current position
-	line, col := defaultScreen.CursorPos()
-	client.DirectSend(constants.MSG, []byte(fmt.Sprintf("\033[%d;%dH", line+1, col+1)))
-
+	client.Send(constants.MSG, []byte(fmt.Sprintf("\033[%d;%dH", crows+1, ccolumns+1)))
 }
 
 func serveHTTP() {
@@ -292,12 +265,14 @@ func apiHandler(w http.ResponseWriter, r *http.Request) {
 	case "enable-ws-stream":
 		// curl -X GET http://localhost:2201/api/action/enable-ws-stream
 
+		rows, columns := defaultScreen.Size()
+
 		sendToAll(
 			constants.MSG,
-			[]byte(fmt.Sprintf("\033[8;%d;%dt\033[2J\033[0;0H", sizeHeight, sizeWidth)))
+			[]byte(fmt.Sprintf("\033[8;%d;%dt\033[2J\033[0;0H", rows, columns)))
 		sendToAll(
 			constants.RESIZE,
-			[]byte(fmt.Sprintf("%d:%d", sizeHeight, sizeWidth)))
+			[]byte(fmt.Sprintf("%d:%d", rows, columns)))
 	case "disable-ws-stream":
 		// curl -X GET http://localhost:2201/api/action/disable-ws-stream
 
@@ -329,6 +304,20 @@ func serveAPI() {
 	log.Fatal(s.ListenAndServe())
 }
 
+func updateTerminalSize() {
+	// Update window size.
+	_ = pty.InheritSize(os.Stdin, ptmx)
+	columns, rows, err := term.GetSize(int(os.Stdin.Fd()))
+	if err != nil {
+		log.Fatalf("error getting size: %s\r\n", err)
+	}
+
+	defaultScreen.Resize(rows, columns)
+
+	sendToAll(constants.RESIZE,
+		[]byte(fmt.Sprintf("%d:%d", rows, columns)))
+}
+
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile | log.Lmicroseconds)
 	logFile, _ := os.Create("compterm.log")
@@ -341,6 +330,27 @@ func main() {
 	if err != nil {
 		log.Fatalf("error loading config: %s\n", err)
 	}
+
+	// Handle signals
+	ch := make(chan os.Signal, 1)
+	signal.Notify(ch, syscall.SIGWINCH, syscall.SIGTERM, os.Interrupt)
+	go func() {
+		for caux := range ch {
+			switch caux {
+			case syscall.SIGWINCH:
+				updateTerminalSize()
+			case syscall.SIGTERM, os.Interrupt:
+				removeAllConnections()
+				// reset terminal
+				os.Stdout.WriteString("\033[0m")
+				//restoreTerm()
+				os.Exit(0)
+			}
+		}
+	}()
+	ch <- syscall.SIGWINCH // Initial resize.
+
+	updateTerminalSize()
 
 	const cookieName = "compterm"
 	sc = session.New(cookieName)
