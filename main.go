@@ -210,13 +210,13 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 	rows, columns := defaultScreen.Size()
 	crows, ccolumns := defaultScreen.CursorPos()
 
-	// set terminal size, clear screen and set cursor to 0,0
-	client.Send(constants.MSG, []byte(fmt.Sprintf("\033[8;%d;%dt\033[0;0H",
-		rows, columns)))
-
 	// send current terminal size (resize the xtermjs terminal)
 	client.Send(constants.RESIZE,
 		[]byte(fmt.Sprintf("%d:%d", rows, columns)))
+
+	// set terminal size, clear screen and set cursor to 0,0
+	client.Send(constants.MSG, []byte(fmt.Sprintf("\033[8;%d;%dt\033[0;0H",
+		rows, columns)))
 
 	// get screen as ansi from mterm buffer
 	msg := defaultScreen.GetScreenAsANSI()
