@@ -4,6 +4,7 @@ go 1.21.4
 
 require (
 	github.com/creack/pty v1.1.21
+	github.com/yuin/gopher-lua v1.1.1
 	golang.org/x/term v0.15.0
 	nhooyr.io/websocket v1.8.10
 )
