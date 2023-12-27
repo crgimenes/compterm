@@ -2,12 +2,10 @@ package config
 
 import (
 	"flag"
-	"log"
 	"os"
 	"path/filepath"
 
 	"github.com/crgimenes/compterm/constants"
-	"github.com/crgimenes/compterm/luaengine"
 )
 
 type Config struct {
@@ -18,6 +16,7 @@ type Config struct {
 	Command   string
 	MOTD      string
 	APIKey    string
+	Path      string
 }
 
 var CFG = &Config{}
@@ -39,32 +38,7 @@ func Load() error {
 		return err
 	}
 
-	luaInit := fullpath + "/init.lua"
-	_, err = os.Stat(luaInit)
-	if err != nil && !os.IsNotExist(err) {
-		log.Printf("error reading init.lua: %s\r\n", err)
-		return err
-	}
-	if os.IsNotExist(err) {
-		f, err := os.Create(luaInit)
-		if err != nil {
-			return err
-		}
-		_, err = f.WriteString(`-- init.lua
--- This file is executed when compterm starts.
--- You can use this file to load your own lua scripts.
-`)
-		if err != nil {
-			log.Printf("error writing init.lua: %s\r\n", err)
-			return err
-		}
-		f.Close()
-	}
-
-	err = luaengine.Startup(luaInit)
-	if err != nil {
-		return err
-	}
+	CFG.Path = fullpath
 
 	flag.StringVar(&CFG.Listen,
 		"listen", "0.0.0.0:2200", "Listen address default: \"0.0.0.0:2200\"")

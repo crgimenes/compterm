@@ -18,6 +18,7 @@ import (
 	"github.com/crgimenes/compterm/client"
 	"github.com/crgimenes/compterm/config"
 	"github.com/crgimenes/compterm/constants"
+	"github.com/crgimenes/compterm/luaengine"
 	"github.com/crgimenes/compterm/screen"
 	"github.com/crgimenes/compterm/session"
 
@@ -326,6 +327,41 @@ func main() {
 	if err != nil {
 		log.Fatalf("error loading config: %s\n", err)
 	}
+
+	/////////////////////////////////////////////////
+
+	// read file init.lua from assets
+
+	luaInit := config.CFG.Path + "/init.lua"
+	_, err = os.Stat(luaInit)
+	if err != nil && !os.IsNotExist(err) {
+		log.Printf("error reading init.lua: %s\r\n", err)
+		return
+	}
+	if os.IsNotExist(err) {
+		f, err := os.Create(luaInit)
+		if err != nil {
+			return
+		}
+		finit, err := assets.FS.Open("init.lua")
+		if err != nil {
+			log.Printf("error reading init.lua from assets: %s\r\n", err)
+			return
+		}
+		_, err = io.Copy(f, finit)
+		if err != nil {
+			log.Printf("error writing init.lua: %s\r\n", err)
+			return
+		}
+		f.Close()
+	}
+
+	err = luaengine.Startup(luaInit)
+	if err != nil {
+		return
+	}
+
+	/////////////////////////////////////////////////
 
 	// verify if there is a pid file
 	pidFile := config.CFG.CFGPath + "/compterm.pid"
