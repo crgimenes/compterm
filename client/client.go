@@ -24,32 +24,9 @@ type Client struct {
 
 func New(conn *websocket.Conn) *Client {
 	return &Client{
-		bs:    stream.New(),
-		conn:  conn,
-		sbuff: make([]byte, constants.BufferSize),
+		bs:   stream.New(),
+		conn: conn,
 	}
-}
-
-// DirectSend sends a message to the client without using the stream
-func (c *Client) DirectSend(prefix byte, p []byte) (n int, err error) {
-	buff := make([]byte, constants.BufferSize)
-	//buff[0] = prefix
-	//n = copy(buff[1:], p)
-	n, err = protocol.Encode(buff, p, prefix, 0)
-	if err != nil {
-		return 0, err
-	}
-
-	err = c.conn.Write(context.Background(), websocket.MessageBinary, buff[:n])
-	if err != nil {
-		if websocket.CloseStatus(err) != websocket.StatusNormalClosure {
-			log.Printf("error writing to websocket: %s, %v\r\n",
-				err, websocket.CloseStatus(err)) // TODO: send to file, not the screen
-		}
-		// removeConnection(c)
-		return 0, err
-	}
-	return n, nil
 }
 
 // Send sends a message to the client using the stream
@@ -112,9 +89,9 @@ func (c *Client) WriteLoop() {
 }
 
 func (c *Client) ReadLoop(ptmx *os.File) {
-	buffer := make([]byte, constants.BufferSize)
+	buff := make([]byte, constants.BufferSize)
 	for {
-		n, err := c.ReadFromWS(buffer)
+		n, err := c.ReadFromWS(buff)
 		if err != nil {
 			log.Printf("error reading from websocket: %s\r\n", err)
 			//removeConnection(client)
@@ -122,7 +99,7 @@ func (c *Client) ReadLoop(ptmx *os.File) {
 		}
 
 		// write to pty
-		_, err = io.Copy(ptmx, strings.NewReader(string(buffer[:n])))
+		_, err = io.Copy(ptmx, strings.NewReader(string(buff[:n])))
 		if err != nil {
 			log.Printf("error writing to pty: %s\r\n", err)
 			//removeConnection(client)
