@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"strings"
+	"sync"
 
 	"github.com/crgimenes/compterm/constants"
 	"github.com/crgimenes/compterm/protocol"
@@ -16,28 +17,33 @@ import (
 type Client struct {
 	bs        *stream.Stream
 	conn      *websocket.Conn
-	sbuff     []byte
 	IP        string
 	Nick      string
 	SessionID string
+	outbuff   []byte // used to avoid memory allocation on each write
+	mx        sync.Mutex
 }
 
 func New(conn *websocket.Conn) *Client {
 	return &Client{
-		bs:   stream.New(),
-		conn: conn,
+		bs:      stream.New(),
+		conn:    conn,
+		outbuff: make([]byte, constants.BufferSize),
+		mx:      sync.Mutex{},
 	}
 }
 
 // Send sends a message to the client using the stream
 func (c *Client) Send(prefix byte, p []byte) (n int, err error) {
-	buff := make([]byte, constants.BufferSize)
-	n, err = protocol.Encode(buff, p, prefix, 0)
+	//buff := make([]byte, constants.BufferSize)
+	c.mx.Lock()
+	defer c.mx.Unlock()
+	n, err = protocol.Encode(c.outbuff, p, prefix, 0)
 	if err != nil {
 		return 0, err
 	}
 
-	return c.bs.Write(buff[:n])
+	return c.bs.Write(c.outbuff[:n])
 }
 
 // Write writes to the stream
