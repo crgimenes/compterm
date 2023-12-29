@@ -1,5 +1,6 @@
 import { Terminal } from 'xterm';
 import { WebLinksAddon } from '@xterm/addon-web-links';
+import { ImageAddon, IImageAddonOptions } from '@xterm/addon-image';
 
 
 const MSG = 0x1;
@@ -35,6 +36,10 @@ const termOptions = {
 
 const terminal = new Terminal(termOptions);
 terminal.loadAddon(new WebLinksAddon());
+
+const imageAddon = new ImageAddon();
+terminal.loadAddon(imageAddon);
+
 terminal.open(document.getElementById('terminal'));
 terminal.focus();
 

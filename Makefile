@@ -9,7 +9,7 @@ dev: js-dev
 	go run -tags dev .
 
 js-deps:
-	npm clean-install
+	npm clean-install --legacy-peer-deps
 
 js-dev:
 	npx esbuild assets/term.js --outfile=assets/term.min.js --bundle --sourcemap
