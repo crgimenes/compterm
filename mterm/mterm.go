@@ -12,36 +12,23 @@ import (
 	"unicode/utf8"
 )
 
-// Cell is a single cell in the terminal
-type Cell struct {
-	Char rune
-	nl   bool // new: 2023-12-13 is new line
-	SGRState
-}
-
 type stateFn func(t *Terminal, r rune) (stateFn, error)
 
 // Terminal is an in memory terminal emulator
 type Terminal struct {
-	mux    sync.Mutex
-	screen []Cell
+	mux          sync.Mutex
+	screens      [2]*Grid
+	screenTarget int
 
 	cstate SGRState
 
 	stateProc stateFn
 
-	cursorLine int
-	cursorCol  int
-
-	Title   string
-	MaxCols int
-	MaxRows int
-
-	TabSize     int
-	BacklogSize int
-
+	Title      string
+	TabSize    int
 	cellUpdate int
 
+	// to handle CSIs CSIu
 	saveCursor   [2]int
 	scrollRegion [2]int // startRow, endRow
 
@@ -52,16 +39,22 @@ type Terminal struct {
 // New returns a new terminal with the given rows and cols
 func New(rows, cols int) *Terminal {
 	return &Terminal{
-		MaxCols: cols,
-		MaxRows: rows,
+		// cursorLine: 0,
+		// cursorCol:  0,
 
-		cursorLine: 0,
-		cursorCol:  0,
+		screens: [2]*Grid{
+			{
+				cells: make([]Cell, rows*cols),
+				size: [2]int{
+					rows,
+					cols,
+				},
+				backlogSize: 1000,
+			},
+		},
 
-		screen: make([]Cell, rows*cols),
-
-		TabSize:     8,
-		BacklogSize: 1000,
+		TabSize: 8,
+		// BacklogSize: 1000,
 
 		stateProc:    (*Terminal).normal,
 		scrollRegion: [2]int{0, rows},
@@ -73,7 +66,7 @@ func (t *Terminal) Cells() []Cell {
 	t.mux.Lock()
 	defer t.mux.Unlock()
 
-	return slices.Clone(t.screen)
+	return slices.Clone(t.screens[t.screenTarget].cells)
 }
 
 type EscapeError struct {
@@ -118,83 +111,17 @@ func (t *Terminal) Put(r rune) error {
 func (t *Terminal) Resize(rows, cols int) {
 	t.mux.Lock()
 	defer t.mux.Unlock()
-
-	curRowsSize := len(t.screen) / t.MaxCols
-
-	backRows := max(len(t.screen)/t.MaxCols-t.MaxRows, 0)
-	newScreen := make([]Cell, max(curRowsSize, rows)*cols)
-
-	ni := 0
-	shrink := 0
-	addLine := func(line []Cell) {
-		orows := 1 + (len(line)-1)/t.MaxCols
-		nrows := 1 + (len(line)-1)/cols
-		rowsDiff := nrows - orows
-
-		switch {
-		case rowsDiff > 0:
-			newScreen = grow(newScreen, rowsDiff*cols)
-		case rowsDiff < 0:
-			shrink += -rowsDiff
-		}
-
-		if ni > len(newScreen) {
-			return
-		}
-		n := copy(newScreen[ni:], line)
-		ni += n
-		if len(line)%cols != 0 {
-			ni += (cols - (ni % cols))
-		}
+	if cols == 0 || rows == 0 {
+		// What to do?!
+		return
 	}
 
-	start := 0
-	// up to Cursor perhaps instead of full screen
-	for i := start; i < len(t.screen); {
-		c := t.screen[i]
-		if !c.nl {
-			i++
-			continue
-		}
-		// add logical text line
-		addLine(t.screen[start : i+1])
-		// next line
-		start = i + t.MaxCols - (i % t.MaxCols)
-		i = start
+	switch t.screenTarget {
+	case 0:
+		t.screens[0].ResizeAndReflow(rows, cols)
+	case 1:
+		t.screens[1].Resize(rows, cols)
 	}
-	copy(newScreen[ni:], t.screen[start:])
-
-	cursorLine := t.cursorLine
-	// 'scroll' up and move cursor up if needed
-	if shrink > 0 {
-		end := max(len(newScreen)-shrink*cols, rows*cols)
-		newScreen = newScreen[:end]
-
-		mv := max(shrink-backRows, 0)
-		cursorLine -= mv
-	}
-	switch {
-	// if new screen is smaller, we shrink if the cursor is at bottom
-	// it will scroll up
-	case rows < t.MaxRows:
-		shrunk := t.MaxRows - rows
-		c := max(cursorLine-(rows-1), 0)
-		shrunk = max(shrunk-c, 0)
-		end := max(len(newScreen)-shrunk*cols, rows*cols)
-		newScreen = newScreen[:end]
-	// if new screen is bigger and we have a backlog, move the cursor until
-	// we don't have any history left
-	case rows > t.MaxRows:
-		grown := rows - t.MaxRows
-		c := min(backRows, grown)
-		cursorLine += c
-	}
-
-	t.cursorCol = min(t.cursorCol, cols-1)
-	t.cursorLine = min(cursorLine, rows-1)
-	t.MaxRows = rows
-	t.MaxCols = cols
-	t.screen = newScreen
 	t.saveCursor = [2]int{0, 0}
 	t.scrollRegion = [2]int{0, rows} // reset?! or resize
 }
@@ -204,10 +131,11 @@ func (t *Terminal) Clear() {
 	t.mux.Lock()
 	defer t.mux.Unlock()
 
-	t.cursorLine = 0
-	t.cursorCol = 0
+	s := t.screens[t.screenTarget]
+	s.cursor = [2]int{}
+	sz := s.size
 	// reset virtual scroll as well
-	t.screen = make([]Cell, t.MaxRows*t.MaxCols)
+	t.screens[0].cells = make([]Cell, sz[0]*sz[1])
 }
 
 func (t *Terminal) GetScreenAsAnsi() []byte {
@@ -231,7 +159,8 @@ func (t *Terminal) CursorPos() (int, int) {
 	t.mux.Lock()
 	defer t.mux.Unlock()
 
-	return t.cursorLine, t.cursorCol
+	s := t.screens[t.screenTarget]
+	return s.cursor[0], s.cursor[1]
 }
 
 func (t *Terminal) put(r rune) error {
@@ -254,53 +183,59 @@ func (t *Terminal) put(r rune) error {
 	return err
 }
 
+// maybe this move to grid.go
 func (t *Terminal) nextLine() {
-	t.cursorLine++
+	s := t.screens[t.screenTarget]
+	rows, cols := s.Size()
+
+	s.cursor[0]++
 	switch {
-	case t.cursorLine < t.scrollRegion[1]-1:
+	case s.cursor[0] < t.scrollRegion[1]-1:
 		return
-	case t.cursorLine == t.scrollRegion[1] && t.scrollRegion[0] == 0:
-		t.cursorLine--
-		if len(t.screen)/t.MaxCols < t.BacklogSize {
-			t.screen = append(t.screen, make([]Cell, t.MaxCols)...)
+	case s.cursor[0] == t.scrollRegion[1] && t.scrollRegion[0] == 0:
+		s.cursor[0]--
+		if t.screenTarget == 0 && len(s.cells)/cols < s.backlogSize {
+			t.screens[0].cells = append(t.screens[0].cells, make([]Cell, cols)...)
 			// TODO: should be:
 			// - insert a new line in offseted scrollRegion[1]
 			// - copy the rest
 			return
 		} // else copy on region?
 		region := t.screenScrollRegion()
-		copy(region, region[t.MaxCols:])
-		fill(region[len(region)-t.MaxCols:], Cell{})
-	case t.cursorLine == t.scrollRegion[1]:
-		t.cursorLine--
+		copy(region, region[cols:])
+		fill(region[len(region)-cols:], Cell{})
+	case s.cursor[0] == t.scrollRegion[1]:
+		s.cursor[0]--
 		region := t.screenScrollRegion()
-		if len(region)/t.MaxCols < t.BacklogSize {
-			region = append(region, make([]Cell, t.MaxCols)...)
+		if len(region)/cols < s.backlogSize {
+			region = append(region, make([]Cell, cols)...)
 			t.cellUpdate++
 		}
-		copy(region, region[t.MaxCols:])
-		fill(region[len(region)-t.MaxCols:], Cell{})
+		copy(region, region[cols:])
+		fill(region[len(region)-cols:], Cell{})
 
 	// Replicate odd xterm behaviour of when the cursor is outside of the region
 	// it will not print neither scroll
-	case t.cursorLine == t.MaxRows:
-		t.cursorLine--
+	case s.cursor[0] == rows:
+		s.cursor[0]--
 	}
 }
 
 func (t *Terminal) normal(r rune) (stateFn, error) {
+	s := t.screens[t.screenTarget]
+	_, cols := s.size[0], s.size[1]
 	switch {
 	case r == '\033':
 		return (*Terminal).esc, nil
 	case r == '\n':
 		t.nextLine()
-		t.cursorCol = 0
+		s.cursor[1] = 0
 
-		screen := t.screenView()
-		prevLine := t.cursorLine - 1
+		// screen := t.screenView()
+		prevLine := s.cursor[0] - 1
 		// find current line ending (non space) and mark it as new line
 		// clear any previous newlines marks on the line
-		line := screen[prevLine*t.MaxCols : prevLine*t.MaxCols+t.MaxCols]
+		line := t.screenLine(prevLine) // screen[prevLine*cols : prevLine*cols+cols]
 		mark := 0
 		for i := range line {
 			line[i].nl = false
@@ -310,37 +245,38 @@ func (t *Terminal) normal(r rune) (stateFn, error) {
 		}
 		line[mark].nl = true
 	case r == '\r':
-		t.cursorCol = 0
+		s.cursor[1] = 0
 	case r == '\b':
-		t.cursorCol = max(0, t.cursorCol-1)
+		s.cursor[1] = max(0, s.cursor[1]-1)
 	case r == '\t':
-		t.cursorCol = (t.cursorCol + t.TabSize) / t.TabSize * t.TabSize
-		t.cursorCol = min(t.cursorCol, t.MaxCols-1)
+		s.cursor[1] = (s.cursor[1] + t.TabSize) / t.TabSize * t.TabSize
+		s.cursor[1] = min(s.cursor[1], cols-1)
 	case r < ' ': // least printable char, we ignore it
 	// case !unicode.IsPrint(r):
 	default:
-		if t.cursorCol >= t.MaxCols {
+		if s.cursor[1] >= cols {
 			t.nextLine()
-			t.cursorCol = 0
+			s.cursor[1] = 0
 		}
 		cl := Cell{
 			Char:     r,
 			SGRState: t.cstate,
 		}
 		screen := t.screenView()
-		offs := t.cursorCol + t.cursorLine*t.MaxCols
+		offs := s.cursor[1] + s.cursor[0]*cols
 		if offs < 0 || offs >= len(screen) {
 			// Rare, but to be safe..
 			return nil, fmt.Errorf("offset out of bounds: %d", offs)
 		}
 		screen[offs] = cl
-		t.cursorCol++
+		s.cursor[1]++
 		t.cellUpdate++
 	}
 	return nil, nil
 }
 
 func (t *Terminal) esc(r rune) (stateFn, error) {
+	s := t.screens[t.screenTarget]
 	switch r {
 	case '[':
 		return t.csi(), nil
@@ -356,8 +292,7 @@ func (t *Terminal) esc(r rune) (stateFn, error) {
 		// TODO: should be t.Reset() and reset state
 		t.Clear()
 	case 'M': // Reverse Index (move cursor up, scrolling if needed)
-		// TODO: scrolling
-		t.cursorLine = max(0, t.cursorLine-1)
+		s.cursor[0] = max(0, s.cursor[0]-1)
 	case 'k':
 		return t.captureString(func(s string) stateFn {
 			// ignore string
@@ -434,7 +369,7 @@ func (t *Terminal) csiGT() stateFn {
 	return func(_ *Terminal, r rune) (stateFn, error) {
 		if r == ';' || unicode.IsNumber(r) {
 			// TODO: implement as params
-			// attrbuf.WriteRune(r)
+			// attrbuf.WriteRune(r){
 			return nil, nil
 		}
 		// TODO: no clue, implement if needed (tmux)
@@ -453,6 +388,8 @@ func (t *Terminal) csiGT() stateFn {
 
 // State Control Sequence Introducer
 func (t *Terminal) csi() stateFn {
+	s := t.screens[t.screenTarget]
+	rows, cols := s.size[0], s.size[1]
 	var p []int
 	nextParam := true
 	return func(t *Terminal, r rune) (stateFn, error) {
@@ -481,42 +418,42 @@ func (t *Terminal) csi() stateFn {
 		case 'A': // Cursor UP
 			n := 1
 			getParams(p, &n)
-			t.cursorLine = max(0, t.cursorLine-n)
+			s.cursor[0] = max(0, s.cursor[0]-n)
 		case 'B': // Cursor DOWN
 			n := 1
 			getParams(p, &n)
-			t.cursorLine = min(t.MaxRows-1, t.cursorLine+n)
+			s.cursor[0] = min(rows-1, s.cursor[0]+n)
 		case 'C': // Cursor FORWARD
 			n := 1
 			getParams(p, &n)
-			t.cursorCol = min(t.MaxCols-1, t.cursorCol+n)
+			s.cursor[1] = min(cols-1, s.cursor[1]+n)
 		case 'D': // Cursor BACK
 			n := 1
 			getParams(p, &n)
-			t.cursorCol = max(0, t.cursorCol-n)
+			s.cursor[1] = max(0, s.cursor[1]-n)
 		case 'E': // (copilot) Moves cursor to beginning of the line n (default 1) lines down.
 			n := 1
 			getParams(p, &n)
-			t.cursorCol = 0
-			t.cursorLine = min(t.MaxRows-1, t.cursorLine+n)
+			s.cursor[1] = 0
+			s.cursor[0] = min(rows-1, s.cursor[0]+n)
 		case 'F': // (copilot)  Moves cursor to beginning of the line n (default 1) lines up.
 			n := 1
 			getParams(p, &n)
-			t.cursorCol = 0
-			t.cursorLine = max(0, t.cursorLine-n)
+			s.cursor[1] = 0
+			s.cursor[0] = max(0, s.cursor[0]-n)
 		case 'G': // (copilot) Cursor HORIZONTAL ABSOLUTE
 			n := 1
 			getParams(p, &n)
-			t.cursorCol = clamp(n-1, 0, t.MaxCols-1)
+			s.cursor[1] = clamp(n-1, 0, cols-1)
 		case 'H': // Cursor POSITION (col, line)
 			line, col := 1, 1
 			getParams(p, &line, &col)
-			t.cursorCol = clamp(col-1, 0, t.MaxCols-1)
-			t.cursorLine = clamp(line-1, 0, t.MaxRows-1)
+			s.cursor[1] = clamp(col-1, 0, cols-1)
+			s.cursor[0] = clamp(line-1, 0, rows-1)
 		case 'd':
 			n := 0
 			getParams(p, &n)
-			t.cursorLine = clamp(n-1, 0, t.MaxRows-1)
+			s.cursor[0] = clamp(n-1, 0, rows-1)
 		// Display erase
 		case 'J': // Erase in Display
 			n := 0
@@ -526,38 +463,42 @@ func (t *Terminal) csi() stateFn {
 
 			switch n {
 			case 0: // clear from cursor to end
-				off := clamp(t.cursorCol+t.cursorLine*t.MaxCols, 0, len(screen))
+				off := clamp(s.cursor[1]+s.cursor[0]*cols, 0, len(screen))
 				fill(screen[off:], Cell{SGRState: t.cstate})
 				t.cellUpdate++
 			case 1: // clear from beginning to cursor
-				off := clamp(t.cursorCol+t.cursorLine*t.MaxCols, 0, len(screen))
+				off := clamp(s.cursor[1]+s.cursor[0]*cols, 0, len(screen))
 				fill(screen[:off], Cell{SGRState: t.cstate})
 				t.cellUpdate++
 			case 2: // clear everything
 				fill(screen, Cell{SGRState: t.cstate})
 				t.cellUpdate++
 			case 3: // clear scrollback
-				if len(t.screen) <= t.MaxRows*t.MaxCols {
+				if t.screenTarget == 1 {
 					break
 				}
-				copy(t.screen, screen)
-				t.screen = t.screen[:t.MaxRows*t.MaxCols]
+				if len(t.screens[0].cells) <= rows*cols {
+					break
+				}
+				copy(t.screens[0].cells, screen)
+				t.screens[0].cells = t.screens[0].cells[:rows*cols]
 				t.cellUpdate++
 			}
 		case 'K': // Erase in Line
 			n := 0
 			getParams(p, &n)
 
-			screen := t.screenView()
+			// screen := t.screenView()
 
-			l := clamp(t.cursorLine, 0, t.MaxRows) * t.MaxCols
-			line := screen[l : l+t.MaxCols]
+			// l := clamp(s.cursor[0], 0, rows) * cols
+			line := t.screenLine(s.cursor[0]) // screen[l : l+cols]
+			//line := screen[l : l+cols]
 			switch n {
 			case 0: // clear from cursor to end
-				fill(line[t.cursorCol:], Cell{SGRState: t.cstate})
+				fill(line[s.cursor[1]:], Cell{SGRState: t.cstate})
 				t.cellUpdate++
 			case 1: // clear from beginning to cursor
-				fill(line[:t.cursorCol], Cell{SGRState: t.cstate})
+				fill(line[:s.cursor[1]], Cell{SGRState: t.cstate})
 				t.cellUpdate++
 			case 2: // clear everything
 				fill(line, Cell{SGRState: t.cstate})
@@ -569,22 +510,19 @@ func (t *Terminal) csi() stateFn {
 
 			region := t.screenScrollRegion()
 
-			lr := max(t.cursorLine, 0)
-			loff := clamp(lr*t.MaxCols, 0, len(region))
-			eoff := clamp(loff+n*t.MaxCols, 0, len(region))
+			lr := max(s.cursor[0], 0)
+			loff := clamp(lr*cols, 0, len(region))
+			eoff := clamp(loff+n*cols, 0, len(region))
 			copy(region[loff:], region[eoff:])
-			fill(region[len(region)-n*t.MaxCols:], Cell{})
+			fill(region[len(region)-n*cols:], Cell{})
 			t.cellUpdate++
 		case 'P': // Delete chars in line it will move the rest of the line to the left
 			n := 1
 			getParams(p, &n)
 
-			screen := t.screenView()
+			line := t.screenLine(s.cursor[0])
 
-			l := t.cursorLine * t.MaxCols
-			line := screen[l : l+t.MaxCols]
-
-			copy(line[t.cursorCol:], line[t.cursorCol+n:])
+			copy(line[s.cursor[1]:], line[s.cursor[1]+n:])
 			fill(line[len(line)-n:], Cell{})
 		case 'X': // Erase chars
 			n := 0
@@ -592,7 +530,7 @@ func (t *Terminal) csi() stateFn {
 
 			screen := t.screenView()
 
-			off := t.cursorCol + t.cursorLine*t.MaxCols
+			off := s.cursor[1] + s.cursor[0]*cols
 			end := min(off+n, len(screen))
 			fill(screen[off:end], Cell{SGRState: t.cstate})
 			t.cellUpdate++
@@ -602,9 +540,9 @@ func (t *Terminal) csi() stateFn {
 
 			region := t.screenScrollRegion()
 
-			lr := max(t.cursorLine, 0)
-			loff := clamp(lr*t.MaxCols, 0, len(region))
-			eoff := clamp(loff+n*t.MaxCols, 0, len(region))
+			lr := max(s.cursor[0], 0)
+			loff := clamp(lr*cols, 0, len(region))
+			eoff := clamp(loff+n*cols, 0, len(region))
 			dup := slices.Clone(region)
 			copy(region[eoff:], dup[loff:])
 			fill(region[loff:eoff], Cell{SGRState: t.cstate})
@@ -616,19 +554,32 @@ func (t *Terminal) csi() stateFn {
 			err := t.cstate.Set(p...)
 			return (*Terminal).normal, err
 		case 'u':
-			t.cursorLine = t.saveCursor[0]
-			t.cursorCol = t.saveCursor[1]
+			s.cursor[0] = t.saveCursor[0]
+			s.cursor[1] = t.saveCursor[1]
 		case 's':
-			t.saveCursor = [2]int{t.cursorLine, t.cursorCol}
+			t.saveCursor = [2]int{s.cursor[0], s.cursor[1]}
 		case 'c':
 			// TODO: {lpf} (comment by copilot: Send device attributes)
 		case 'h':
 			switch p[0] {
+			// enter private mode
+			case 1049:
+				t.screens[1] = &Grid{
+					cells:  make([]Cell, rows*cols),
+					size:   [2]int{rows, cols},
+					cursor: t.screens[0].cursor,
+				}
+				t.screenTarget = 1
+
 			case 1004:
 				// TODO: Turn focus report ON
 			}
 		case 'l':
 			switch p[0] {
+			// restore private mode
+			case 1049:
+				t.screens[0].ResizeAndReflow(rows, cols)
+				t.screenTarget = 0
 			case 25: // hide cursor if first rune is '?'
 			case 1:
 				// TODO: Turn cursor keys to application mode OFF
@@ -636,7 +587,7 @@ func (t *Terminal) csi() stateFn {
 		case 't':
 			// TODO: {lpf} (comment by copilot: Window manipulation)
 		case 'r':
-			top, bottom := 1, t.MaxRows
+			top, bottom := 1, rows
 			getParams(p, &top, &bottom)
 
 			switch {
@@ -645,11 +596,11 @@ func (t *Terminal) csi() stateFn {
 				top, bottom = bottom, top
 			// Disable scrollRegion if equal (alacritty, xterm)
 			case top == bottom:
-				top, bottom = 1, t.MaxRows
+				top, bottom = 1, rows
 			}
 
-			t.scrollRegion[0] = clamp(top-1, 0, t.MaxRows)
-			t.scrollRegion[1] = clamp(bottom, 0, t.MaxRows)
+			t.scrollRegion[0] = clamp(top-1, 0, rows)
+			t.scrollRegion[1] = clamp(bottom, 0, rows)
 
 			// TODO: this needs some love, it's not working as expected
 			// some cases it resets cursor, others resets the whole screen
@@ -657,15 +608,13 @@ func (t *Terminal) csi() stateFn {
 			case len(p) == 0:
 				// fill(t.screen, Cell{})
 				// Reset backScroll too
-				t.cursorLine = 0
-				t.cursorCol = 0
+				s.cursor = [2]int{}
 			case len(p) == 1:
-				t.cursorLine = 0
-				t.cursorCol = 0
+				s.cursor = [2]int{}
 			default:
 				// fill(t.screen, Cell{})
-				// t.cursorLine = 0
-				// t.cursorCol = 0
+				// s.cursor[0] = 0
+				// s.cursor[1] = 0
 			}
 		case 'S': // Scrollup
 			n := 1
@@ -673,16 +622,16 @@ func (t *Terminal) csi() stateFn {
 
 			region := t.screenScrollRegion()
 
-			copy(region, region[n*t.MaxCols:])
-			fill(region[len(region)-n*t.MaxCols:], Cell{})
+			copy(region, region[n*cols:])
+			fill(region[len(region)-n*cols:], Cell{})
 		case 'T': // Scrolldown
 			n := 1
 			getParams(p, &n)
 
 			region := t.screenScrollRegion()
 
-			copy(region[n*t.MaxCols:], region)
-			fill(region[:n*t.MaxCols], Cell{})
+			copy(region[n*cols:], region)
+			fill(region[:n*cols], Cell{})
 		default:
 			return (*Terminal).normal, fmt.Errorf("unknown CSI: %d %[1]c", r)
 
@@ -691,28 +640,43 @@ func (t *Terminal) csi() stateFn {
 	}
 }
 
+func (t *Terminal) screenLine(n int) []Cell {
+	s := t.screens[t.screenTarget]
+	n = clamp(n, 0, s.size[0]-1)
+
+	return s.cells[n*s.size[1] : n*s.size[1]+s.size[1]]
+}
+
 func (t *Terminal) screenScrollRegion() []Cell {
+	s := t.screens[t.screenTarget]
+	cols := s.size[1]
 	screen := t.screenView()
-	start := clamp(t.scrollRegion[0]*t.MaxCols, 0, len(screen))
-	end := clamp(t.scrollRegion[1]*t.MaxCols, 0, len(screen))
+	start := clamp(t.scrollRegion[0]*cols, 0, len(screen))
+	end := clamp(t.scrollRegion[1]*cols, 0, len(screen))
 
 	return screen[start:end]
 }
 
 func (t *Terminal) screenView() []Cell {
-	start := max(len(t.screen)-t.MaxRows*t.MaxCols, 0)
-	end := len(t.screen)
+	s := t.screens[t.screenTarget]
+	rows, cols := s.size[0], s.size[1]
 
-	return t.screen[start:end]
+	start := max(len(s.cells)-rows*cols, 0)
+	end := len(s.cells)
+
+	return s.cells[start:end]
 }
 
 func (t *Terminal) getScreenAsAnsi(cursor bool) []byte {
+	s := t.screens[t.screenTarget]
+	cols := s.size[1]
+
 	buf := bytes.NewBuffer(nil)
 	x, y := 0, 0
 	lastState := SGRState{}
 	screen := t.screenView()
 	for i := range screen {
-		if x >= t.MaxCols {
+		if x >= cols {
 			y++
 			x = 0
 			buf.WriteString("\r\n")
@@ -778,7 +742,7 @@ func (t *Terminal) getScreenAsAnsi(cursor bool) []byte {
 			r = ' '
 		}
 
-		if cursor && x == t.cursorCol && y == t.cursorLine {
+		if cursor && x == s.cursor[1] && y == s.cursor[0] {
 			fmt.Fprintf(buf, "\033[7m%c\033[27m", r)
 			x += 1
 			lastState = SGRState{}

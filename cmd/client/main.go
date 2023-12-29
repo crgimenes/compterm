@@ -9,6 +9,7 @@ import (
 
 	"github.com/crgimenes/compterm/constants"
 	"github.com/crgimenes/compterm/mterm"
+	"github.com/crgimenes/compterm/protocol"
 	"nhooyr.io/websocket"
 )
 
@@ -26,7 +27,7 @@ func main() {
 
 	t := mterm.New(24, 80)
 	for {
-		mt, data, err := c.Read(context.Background())
+		mt, pdata, err := c.Read(context.Background())
 		if err != nil {
 			if err == io.EOF {
 				log.Println(">>> EOF")
@@ -41,21 +42,27 @@ func main() {
 		}
 		log.Printf("Message Type = %v, data[0] = %d, len(data) = %d\n",
 			mt,
-			data[0],
-			len(data),
+			pdata[0],
+			len(pdata),
 		)
 
+		data := make([]byte, len(pdata))
+		command, _, _, err := protocol.Decode(data, pdata)
+		if err != nil {
+			log.Printf("Decode error: %v\n", err)
+		}
+
 		// command is the first byte of data
-		command := data[0]
+		// command := data[0]
 		switch command {
 		case constants.MSG:
 			log.Println("SCREEN:")
-			log.Printf("%q", string(data[1:]))
+			log.Printf("%q", string(data))
 
-			if _, err := t.Write(data[1:]); err != nil {
+			if _, err := t.Write(data); err != nil {
 				// could be ignored
 				if err, ok := err.(mterm.EscapeError); ok {
-					d := data[1:]
+					d := data
 					mm := max(err.Offset-20, 0)
 					mx := min(err.Offset+20, len(d))
 					sub := d[mm:mx]
@@ -65,8 +72,8 @@ func main() {
 					quoted := fmt.Sprintf("%q", string(sub))
 					// Hacky way to get the offset considering the escaped escape sequences
 					off = max(off-2, 0)
-					quotedLoc := fmt.Sprintf("%q", string(sub[:off-2]))
-					log.Fatalf("Error:\n%s\n\033[%dC^ %v\n", quoted, len(quotedLoc), err)
+					quotedLoc := fmt.Sprintf("%q", string(sub[:off]))
+					log.Printf("Error:\n%s\n\033[%dC^ %v\n", quoted, len(quotedLoc), err)
 				}
 			}
 
@@ -79,8 +86,7 @@ func main() {
 			}
 		case constants.RESIZE:
 			var c, l int
-			fmt.Sscanf(string(data[1:]), "%d:%d", &c, &l)
-			// log.Println("Resizing cols:", c, "lines:", l)
+			fmt.Sscanf(string(data), "%d:%d", &c, &l)
 			t.Resize(c, l)
 		// resize
 		default:
