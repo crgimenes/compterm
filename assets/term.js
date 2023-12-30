@@ -150,4 +150,7 @@ function connectWS() {
   terminal.onerror = (err) => console.log(err);
 }
 
-connectWS();
+// start the connection when the page is loaded
+window.onload = () => {
+    connectWS();
+}
