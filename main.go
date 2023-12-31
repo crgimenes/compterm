@@ -244,7 +244,7 @@ func serveHTTP() {
 		MaxHeaderBytes: 1 << 20,
 	}
 
-	log.Printf("Listening on port %v\n", config.CFG.Listen)
+	log.Printf("Listening on %v\n", config.CFG.Listen)
 	log.Fatal(s.ListenAndServe())
 }
 
@@ -302,7 +302,7 @@ func serveAPI() {
 		MaxHeaderBytes: 1 << 20,
 	}
 
-	log.Printf("Listening API on port %v\n", config.CFG.APIListen)
+	log.Printf("Listening API on %v\n", config.CFG.APIListen)
 	log.Fatal(s.ListenAndServe())
 }
 
@@ -332,13 +332,15 @@ func main() {
 
 	// read file init.lua from assets
 
-	luaInit := config.CFG.Path + "/init.lua"
+	luaInit := config.CFG.Path + "/" + config.CFG.InitFile
+
 	_, err = os.Stat(luaInit)
 	if err != nil && !os.IsNotExist(err) {
-		log.Printf("error reading init.lua: %s\r\n", err)
+		log.Printf("error reading %q : %s\r\n", luaInit, err)
 		return
 	}
-	if os.IsNotExist(err) {
+
+	if os.IsNotExist(err) && config.CFG.InitFile == "init.lua" {
 		f, err := os.Create(luaInit)
 		if err != nil {
 			return
@@ -364,24 +366,28 @@ func main() {
 	/////////////////////////////////////////////////
 
 	// verify if there is a pid file
-	pidFile := config.CFG.Path + "/compterm.pid"
-	_, err = os.Stat(pidFile)
-	if err == nil {
-		b, err := os.ReadFile(pidFile)
-		if err != nil {
-			log.Fatalf("error reading pid file: %s\n", err)
+	if !config.CFG.IgnorePID {
+		pidFile := config.CFG.Path + "/compterm.pid"
+		_, err = os.Stat(pidFile)
+		if err == nil {
+			b, err := os.ReadFile(pidFile)
+			if err != nil {
+				log.Fatalf("error reading pid file: %s\n", err)
+			}
+			fmt.Printf("There is already a compterm running, pid: %s pid file: %s\n", string(b), pidFile)
+			os.Exit(1)
 		}
-		fmt.Printf("There is already a compterm running, pid: %s\n", b)
-		os.Exit(1)
+
+		// create pid file
+		err = os.WriteFile(pidFile, []byte(fmt.Sprintf("%d", os.Getpid())), 0640)
+		if err != nil {
+			log.Fatalf("error writing pid file: %s\n", err)
+		}
+
+		defer os.Remove(pidFile)
 	}
 
-	// create pid file
-	err = os.WriteFile(pidFile, []byte(fmt.Sprintf("%d", os.Getpid())), 0640)
-	if err != nil {
-		log.Fatalf("error writing pid file: %s\n", err)
-	}
-	defer os.Remove(pidFile)
-
+	/////////////////////////////////////////////////
 	logFile := config.CFG.Path + "/compterm.log"
 	f, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0640)
 	if err != nil {
