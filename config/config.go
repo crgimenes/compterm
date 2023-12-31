@@ -143,6 +143,11 @@ func Load() error {
 		p("        Ignore PID file default: false\n")
 		p("        Override the environment variable $COMPTERM_IGNORE_PID\n")
 		p("\n")
+		p("init.lua:\n")
+		p("    The init.lua file is located at $HOME/.config/compterm/init.lua\n")
+		p("    This file is used to configure the compterm and can override all other settings and command line flags except -path and -init\n")
+		p("    If the file does not exist it will be created with the default content.\n")
+		p("\n")
 
 	}
 
