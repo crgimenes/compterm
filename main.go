@@ -195,14 +195,12 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 	//go client.ReadLoop(ptmx)
 
 	runtime.Gosched()
-	// TODO: make sure the client is ready to receive messages
 
 	///////////////////////////////////////////////
 
 	if motd == "" {
-		// azul claro
 		motd = "\033[1;36mcompterm\033[0m " +
-			GitTag + "\r\nWelcome to compterm, please wait for the command to start...\r\n"
+			GitTag + "\r\nWelcome to compterm, please wait...\r\n"
 	}
 
 	client.Send(constants.MSG, []byte(motd))
