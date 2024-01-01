@@ -12,7 +12,6 @@ import (
 
 type ConnectedClient struct {
 	WritePermission bool
-	wsStreamEnabled bool // Websocket stream enabled
 	Client          *client.Client
 }
 
@@ -23,7 +22,6 @@ type Screen struct {
 	Clients []*ConnectedClient
 	Stream  *stream.Stream
 	mt      *mterm.Terminal
-	ptmx    *os.File
 }
 
 type Manager struct {
