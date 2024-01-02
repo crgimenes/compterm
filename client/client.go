@@ -34,21 +34,33 @@ func New(conn *websocket.Conn) *Client {
 }
 
 // Send sends a message to the client using the stream
-func (c *Client) Send(prefix byte, p []byte) (n int, err error) {
-	//buff := make([]byte, constants.BufferSize)
+func (c *Client) Send(prefix byte, p []byte) (err error) {
 	c.mx.Lock()
 	defer c.mx.Unlock()
-	n, err = protocol.Encode(c.outbuff, p, prefix, 0)
+	ln, err := protocol.Encode(c.outbuff, p, prefix, 0)
 	if err != nil {
-		return 0, err
+		return err
 	}
 
-	return c.bs.Write(c.outbuff[:n])
+	n := 0
+	for n < ln {
+		n, err = c.bs.Write(c.outbuff[n:ln])
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 // Write writes to the stream
 func (c *Client) Write(p []byte) (n int, err error) {
-	return c.Send(constants.MSG, p)
+	err = c.Send(constants.MSG, p)
+	if err != nil {
+		return 0, err
+	}
+
+	return len(p), nil
 }
 
 // Read reads from the stream

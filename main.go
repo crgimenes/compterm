@@ -73,8 +73,7 @@ func writeAllWS() {
 func sendToAll(command byte, params []byte) {
 	connMutex.Lock()
 	for _, c := range clients {
-		cn, err := c.Send(command, params)
-		_ = cn
+		err := c.Send(command, params)
 		if err != nil {
 			log.Printf("error writing to websocket: %s\r\n", err)
 			removeConnection(c)
