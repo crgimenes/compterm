@@ -55,14 +55,15 @@ func writeAllWS() {
 		connMutex.Lock()
 		for _, c := range clients {
 			cn, err := c.Write(msg[:n])
-			for cn < n && err == nil {
-				msg = msg[cn:]
-				n -= cn
-				cn, err = c.Write(msg[:n])
-			}
 			if err != nil {
 				log.Printf("error writing to websocket: %s\r\n", err)
 				removeConnection(c)
+				continue
+			}
+			for cn < n {
+				msg = msg[cn:]
+				n -= cn
+				cn, err = c.Write(msg[:n])
 			}
 		}
 		connMutex.Unlock()
