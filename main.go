@@ -38,6 +38,9 @@ var (
 )
 
 func writeAllWS() {
+	// - Converter cliente em uma interface com o método Send
+	// - Criar uma lista de clientes em screen
+	// - Mover este método para screen
 	msg := make([]byte, constants.BufferSize)
 	for {
 		n, err := defaultScreen.Read(msg)
@@ -66,6 +69,7 @@ func writeAllWS() {
 }
 
 func sendToAll(command byte, params []byte) {
+	// - Mover este método para screen, e usar a lista de clientes
 	connMutex.Lock()
 	for _, c := range clients {
 		err := c.Send(command, params)
