@@ -89,6 +89,10 @@ func (s *Screen) Write(p []byte) (n int, err error) {
 	return
 }
 
+func (s *Screen) Read(p []byte) (n int, err error) {
+	return s.Stream.Read(p)
+}
+
 // Resize screen
 func (s *Screen) Resize(rows, columns int) {
 	s.Rows = rows

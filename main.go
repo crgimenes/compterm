@@ -40,7 +40,7 @@ var (
 func writeAllWS() {
 	msg := make([]byte, constants.BufferSize)
 	for {
-		n, err := defaultScreen.Stream.Read(msg)
+		n, err := defaultScreen.Read(msg)
 		if err != nil {
 			if err == io.EOF {
 				time.Sleep(100 * time.Millisecond)
@@ -54,16 +54,11 @@ func writeAllWS() {
 
 		connMutex.Lock()
 		for _, c := range clients {
-			cn, err := c.Write(msg[:n])
+			err = c.Send(constants.MSG, msg[:n])
 			if err != nil {
 				log.Printf("error writing to websocket: %s\r\n", err)
 				removeConnection(c)
 				continue
-			}
-			for cn < n {
-				msg = msg[cn:]
-				n -= cn
-				cn, err = c.Write(msg[:n])
 			}
 		}
 		connMutex.Unlock()
