@@ -10,7 +10,7 @@ import (
 	"github.com/crgimenes/compterm/stream"
 )
 
-type ConnectedClient struct {
+type AttachedClient struct {
 	WritePermission bool
 	Client          *client.Client
 }
@@ -19,7 +19,7 @@ type Screen struct {
 	Title   string
 	Columns int
 	Rows    int
-	Clients []*ConnectedClient
+	Clients []*AttachedClient
 	Stream  *stream.Stream
 	mt      *mterm.Terminal
 }
@@ -38,24 +38,81 @@ func NewManager() *Manager {
 }
 
 // attach a client to a screen
-func (m *Manager) AttachClient(c *client.Client) {
-	// TODO: check if client is already attached
-	// TODO: check if client has write permission
-	// remove client from other screens
-	// add client to screen
+func (m *Manager) AttachClient(c *client.Client, screenID int, writePermission bool) error {
+	// check if screen exists
+	if screenID < 0 || screenID > len(m.Screens) {
+		return fmt.Errorf("invalid screen id")
+	}
+
+	// check if client is already attached
+	for _, ac := range m.Screens[screenID].Clients {
+		if ac.Client == c {
+			ac.WritePermission = writePermission
+			ac.Client.CurrentScreenID = screenID
+			// TODO: send resize, clear screen, send cursor position and screen to client
+			return nil
+		}
+	}
+
+	// attach client to screen
+	m.Screens[screenID].Clients = append(m.Screens[screenID].Clients, &AttachedClient{
+		WritePermission: writePermission,
+		Client:          c,
+	})
+	c.CurrentScreenID = screenID
+	// TODO: send resize, clear screen, send cursor position and screen to client
+
+	return nil
 }
 
 // detach a client from a screen
-func (m *Manager) DetachClient(c *client.Client) {
-	// TODO: check if client is attached
-	// remove client from screen and add to default screen
+func (m *Manager) DetachClient(c *client.Client, screenID int) error {
+	// check if screen exists
+	if screenID < 0 || screenID > len(m.Screens) {
+		return fmt.Errorf("invalid screen id")
+	}
+
+	// check if client is attached
+	for i, ac := range m.Screens[screenID].Clients {
+		if ac.Client == c {
+			m.Screens[screenID].Clients = append(
+				m.Screens[screenID].Clients[:i],
+				m.Screens[screenID].Clients[i+1:]...)
+			return nil
+		}
+	}
+
+	return fmt.Errorf("client not attached")
 }
 
-// create a new screen
-func (m *Manager) NewScreen(rows, columns int) *Screen {
-	s := New(rows, columns)
-	m.Screens = append(m.Screens, s)
-	return s
+// detach a client from all screens
+func (m *Manager) DetachClientFromAllScreens(c *client.Client) {
+	for _, s := range m.Screens {
+		for i, ac := range s.Clients {
+			if ac.Client == c {
+				s.Clients = append(
+					s.Clients[:i],
+					s.Clients[i+1:]...)
+			}
+		}
+	}
+}
+
+// change current screen
+func (m *Manager) ChangeScreen(c *client.Client, screenID int) error {
+	if screenID < 0 || screenID > len(m.Screens) {
+		return fmt.Errorf("invalid screen id")
+	}
+
+	// check if client is attached to screen return error if not
+	for _, ac := range m.Screens[screenID].Clients {
+		if ac.Client == c {
+			c.CurrentScreenID = screenID
+			return nil
+		}
+	}
+
+	return fmt.Errorf("client not attached to screen")
 }
 
 // remove a screen
@@ -69,7 +126,10 @@ func (m *Manager) RemoveScreen(id int) error {
 		return fmt.Errorf("invalid screen id")
 	}
 
-	// TODO: move clients to default screen
+	// move clients to default screen
+	for _, ac := range m.Screens[id].Clients {
+		m.Screens[0].Clients = append(m.Screens[0].Clients, ac)
+	}
 
 	// remove screen
 	m.Screens = append(m.Screens[:id], m.Screens[id+1:]...)

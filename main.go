@@ -190,6 +190,9 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 	clients = append(clients, client)
 	connMutex.Unlock()
 
+	// TODO: attach to the default screen
+	// TODO: move loops sreen.go
+
 	go client.WriteLoop()
 	//go client.ReadLoop(ptmx)
 

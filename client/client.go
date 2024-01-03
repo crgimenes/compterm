@@ -15,13 +15,14 @@ import (
 )
 
 type Client struct {
-	bs        *stream.Stream
-	conn      *websocket.Conn
-	IP        string
-	Nick      string
-	SessionID string
-	outbuff   []byte // used to avoid memory allocation on each write
-	mx        sync.Mutex
+	CurrentScreenID int
+	bs              *stream.Stream
+	conn            *websocket.Conn
+	IP              string
+	Nick            string
+	SessionID       string
+	outbuff         []byte // used to avoid memory allocation on each write
+	mx              sync.Mutex
 }
 
 func New(conn *websocket.Conn) *Client {
