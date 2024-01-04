@@ -4,7 +4,6 @@ import (
 	"context"
 	"io"
 	"log"
-	"os"
 	"strings"
 	"sync"
 
@@ -106,7 +105,7 @@ func (c *Client) WriteLoop() {
 	}
 }
 
-func (c *Client) ReadLoop(ptmx *os.File) {
+func (c *Client) ReadLoop(w io.Writer) {
 	buff := make([]byte, constants.BufferSize)
 	for {
 		n, err := c.ReadFromWS(buff)
@@ -117,7 +116,7 @@ func (c *Client) ReadLoop(ptmx *os.File) {
 		}
 
 		// write to pty
-		_, err = io.Copy(ptmx, strings.NewReader(string(buff[:n])))
+		_, err = io.Copy(w, strings.NewReader(string(buff[:n])))
 		if err != nil {
 			log.Printf("error writing to pty: %s\r\n", err)
 			//removeConnection(client)

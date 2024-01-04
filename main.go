@@ -157,20 +157,15 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 
 	screenManager.AttachClient(client, defaultScreen, false)
 
-	//connMutex.Lock()
-	//clients = append(clients, client)
-	//connMutex.Unlock()
-
-	// TODO: attach to the default screen
-	// TODO: move loops sreen.go
-
+	// TODO: move to screen
 	go client.WriteLoop()
-	//go client.ReadLoop(ptmx)
+	go client.ReadLoop(ptmx)
 
 	runtime.Gosched()
 
 	///////////////////////////////////////////////
 
+	// TODO: move this to screen and send evry time a client is attached to the screen
 	if motd == "" {
 		motd = "\033[1;36mcompterm\033[0m " +
 			GitTag + "\r\nWelcome to compterm, please wait...\r\n"
