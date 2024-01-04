@@ -159,7 +159,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 
 	// TODO: move to screen
 	go client.WriteLoop()
-	go client.ReadLoop(ptmx)
+	//go client.ReadLoop(ptmx)
 
 	runtime.Gosched()
 

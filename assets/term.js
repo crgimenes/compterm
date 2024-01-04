@@ -145,7 +145,8 @@ function connectWS() {
     setTimeout(connectWS, 1000);
   };
 
-  terminal.onKey(({ key }) => ws.send(key));
+  //terminal.onKey(({ key }) => ws.send(key));
+  terminal.onData((data) => ws.send(data));
   terminal.onTitleChange((title) => document.title = title);
   terminal.onerror = (err) => console.log(err);
 }
