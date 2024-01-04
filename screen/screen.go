@@ -12,6 +12,7 @@ import (
 
 type AttachedClient struct {
 	WritePermission bool
+	CurrentScreen   *Screen
 	Client          *client.Client
 }
 
@@ -38,46 +39,36 @@ func NewManager() *Manager {
 }
 
 // attach a client to a screen
-func (m *Manager) AttachClient(c *client.Client, screenID int, writePermission bool) error {
-	// check if screen exists
-	if screenID < 0 || screenID > len(m.Screens) {
-		return fmt.Errorf("invalid screen id")
-	}
-
+func (m *Manager) AttachClient(c *client.Client, screen *Screen, writePermission bool) error {
 	// check if client is already attached
-	for _, ac := range m.Screens[screenID].Clients {
+	for _, ac := range screen.Clients {
 		if ac.Client == c {
 			ac.WritePermission = writePermission
-			ac.Client.CurrentScreenID = screenID
+			ac.CurrentScreen = screen
 			// TODO: send resize, clear screen, send cursor position and screen to client
 			return nil
 		}
 	}
 
 	// attach client to screen
-	m.Screens[screenID].Clients = append(m.Screens[screenID].Clients, &AttachedClient{
+	screen.Clients = append(screen.Clients, &AttachedClient{
 		WritePermission: writePermission,
+		CurrentScreen:   screen,
 		Client:          c,
 	})
-	c.CurrentScreenID = screenID
 	// TODO: send resize, clear screen, send cursor position and screen to client
 
 	return nil
 }
 
 // detach a client from a screen
-func (m *Manager) DetachClient(c *client.Client, screenID int) error {
-	// check if screen exists
-	if screenID < 0 || screenID > len(m.Screens) {
-		return fmt.Errorf("invalid screen id")
-	}
-
+func (m *Manager) DetachClient(c *client.Client, screen *Screen) error {
 	// check if client is attached
-	for i, ac := range m.Screens[screenID].Clients {
+	for i, ac := range screen.Clients {
 		if ac.Client == c {
-			m.Screens[screenID].Clients = append(
-				m.Screens[screenID].Clients[:i],
-				m.Screens[screenID].Clients[i+1:]...)
+			screen.Clients = append(
+				screen.Clients[:i],
+				screen.Clients[i+1:]...)
 			return nil
 		}
 	}
@@ -99,15 +90,11 @@ func (m *Manager) DetachClientFromAllScreens(c *client.Client) {
 }
 
 // change current screen
-func (m *Manager) ChangeScreen(c *client.Client, screenID int) error {
-	if screenID < 0 || screenID > len(m.Screens) {
-		return fmt.Errorf("invalid screen id")
-	}
-
+func (m *Manager) ChangeScreen(c *client.Client, screen *Screen) error {
 	// check if client is attached to screen return error if not
-	for _, ac := range m.Screens[screenID].Clients {
+	for _, ac := range screen.Clients {
 		if ac.Client == c {
-			c.CurrentScreenID = screenID
+			ac.CurrentScreen = screen
 			return nil
 		}
 	}
