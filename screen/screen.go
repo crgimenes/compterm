@@ -199,6 +199,9 @@ func (s *Screen) writeToAttachedClients() {
 
 		//connMutex.Lock()
 		for _, c := range s.Clients {
+			if c.CurrentScreen != s { // client is attached to this screen but is not the current screen
+				continue
+			}
 			err = c.Client.Send(constants.MSG, msg[:n])
 			if err != nil {
 				log.Printf("error writing to websocket: %s\r\n", err)
