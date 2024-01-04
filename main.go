@@ -30,52 +30,21 @@ import (
 var (
 	screenManager    = screen.NewManager()
 	_, defaultScreen = screenManager.GetScreenByID(0)
-	clients          []*client.Client
-	connMutex        sync.Mutex
-	ptmx             *os.File
-	GitTag           string = "0.0.0v"
-	sc               *session.Control
+	//clients          []*client.Client
+	connMutex sync.Mutex
+	ptmx      *os.File
+	GitTag    string = "0.0.0v"
+	sc        *session.Control
 )
-
-func writeAllWS() {
-	// - Converter cliente em uma interface com o método Send
-	// - Criar uma lista de clientes em screen
-	// - Mover este método para screen
-	msg := make([]byte, constants.BufferSize)
-	for {
-		n, err := defaultScreen.Read(msg)
-		if err != nil {
-			if err == io.EOF {
-				time.Sleep(100 * time.Millisecond)
-				continue
-			}
-			log.Printf("error reading from byte stream: %s\r\n", err)
-
-			removeAllConnections()
-			os.Exit(1)
-		}
-
-		connMutex.Lock()
-		for _, c := range clients {
-			err = c.Send(constants.MSG, msg[:n])
-			if err != nil {
-				log.Printf("error writing to websocket: %s\r\n", err)
-				removeConnection(c)
-				continue
-			}
-		}
-		connMutex.Unlock()
-	}
-}
 
 func sendToAll(command byte, params []byte) {
 	// - Mover este método para screen, e usar a lista de clientes
 	connMutex.Lock()
-	for _, c := range clients {
-		err := c.Send(command, params)
+	for _, c := range defaultScreen.Clients {
+		err := c.Client.Send(command, params)
 		if err != nil {
 			log.Printf("error writing to websocket: %s\r\n", err)
-			removeConnection(c)
+			removeConnection(c.Client)
 		}
 	}
 	connMutex.Unlock()
@@ -126,22 +95,22 @@ func runCmd() {
 
 func removeAllConnections() {
 	connMutex.Lock()
-	for _, c := range clients {
-		err := c.Close()
+	for _, c := range defaultScreen.Clients {
+		err := c.Client.Close()
 		if err != nil {
 			log.Printf("error closing websocket: %s\r\n", err)
 		}
 	}
-	clients = nil
+	defaultScreen.Clients = nil
 	connMutex.Unlock()
 }
 
 func removeConnection(c *client.Client) {
 	connMutex.Lock()
-	for i, client := range clients {
-		if client == c {
-			client.Close()
-			clients = append(clients[:i], clients[i+1:]...)
+	for i, client := range defaultScreen.Clients {
+		if client.Client == c {
+			client.Client.Close()
+			defaultScreen.Clients = append(defaultScreen.Clients[:i], defaultScreen.Clients[i+1:]...)
 			break
 		}
 	}
@@ -186,9 +155,11 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 
 	motd := config.CFG.MOTD
 
-	connMutex.Lock()
-	clients = append(clients, client)
-	connMutex.Unlock()
+	screenManager.AttachClient(client, defaultScreen, false)
+
+	//connMutex.Lock()
+	//clients = append(clients, client)
+	//connMutex.Unlock()
 
 	// TODO: attach to the default screen
 	// TODO: move loops sreen.go
@@ -419,7 +390,7 @@ func main() {
 	const cookieName = "compterm"
 	sc = session.New(cookieName)
 
-	go writeAllWS()
+	//go writeAllWS()
 	go serveAPI()
 	go serveHTTP()
 	runtime.Gosched()

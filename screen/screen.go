@@ -2,10 +2,13 @@ package screen
 
 import (
 	"fmt"
+	"io"
 	"log"
 	"os"
+	"time"
 
 	"github.com/crgimenes/compterm/client"
+	"github.com/crgimenes/compterm/constants"
 	"github.com/crgimenes/compterm/mterm"
 	"github.com/crgimenes/compterm/stream"
 )
@@ -173,7 +176,38 @@ func New(rows, columns int) *Screen {
 		Stream:  stream.New(),
 		mt:      mterm.New(rows, columns),
 	}
+
+	go s.writeToAttachedClients()
+
 	return s
+}
+
+func (s *Screen) writeToAttachedClients() {
+	msg := make([]byte, constants.BufferSize)
+	for {
+		n, err := s.Read(msg)
+		if err != nil {
+			if err == io.EOF {
+				time.Sleep(100 * time.Millisecond)
+				continue
+			}
+			log.Printf("error reading from byte stream: %s\r\n", err)
+
+			//removeAllConnections()
+			os.Exit(1)
+		}
+
+		//connMutex.Lock()
+		for _, c := range s.Clients {
+			err = c.Client.Send(constants.MSG, msg[:n])
+			if err != nil {
+				log.Printf("error writing to websocket: %s\r\n", err)
+				//removeConnection(c)
+				continue
+			}
+		}
+		//connMutex.Unlock()
+	}
 }
 
 // Writer interface
