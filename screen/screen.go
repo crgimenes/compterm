@@ -119,7 +119,7 @@ func (m *Manager) GetAttachedClientByClient(c *client.Client) (*AttachedClient, 
 }
 
 // handle client input
-func (m *Manager) HandleClientInput(c *client.Client) {
+func (m *Manager) HandleInput(c *client.Client) {
 	buff := make([]byte, constants.BufferSize)
 	for {
 		n, err := c.ReadFromWS(buff) // Read from websocket

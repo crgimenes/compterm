@@ -159,7 +159,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 
 	screenManager.AttachClient(client, defaultScreen, false)
 
-	go screenManager.HandleClientInput(client)
+	go screenManager.HandleInput(client)
 
 	///////////////////////////////////////////////
 
