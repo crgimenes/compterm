@@ -20,12 +20,13 @@ type AttachedClient struct {
 }
 
 type Screen struct {
-	Title   string
-	Columns int
-	Rows    int
-	Clients []*AttachedClient
-	Stream  *stream.Stream
-	mt      *mterm.Terminal
+	Title           string
+	Columns         int
+	Rows            int
+	AttachedClients []*AttachedClient
+	Stream          *stream.Stream
+	mt              *mterm.Terminal // terminal emulator
+	InputResiver    io.Writer       // receive input (stdin) from attached clients and other sources
 }
 
 type Manager struct {
@@ -44,7 +45,7 @@ func NewManager() *Manager {
 // attach a client to a screen
 func (m *Manager) AttachClient(c *client.Client, screen *Screen, writePermission bool) error {
 	// check if client is already attached
-	for _, ac := range screen.Clients {
+	for _, ac := range screen.AttachedClients {
 		if ac.Client == c {
 			ac.WritePermission = writePermission
 			ac.CurrentScreen = screen
@@ -54,7 +55,7 @@ func (m *Manager) AttachClient(c *client.Client, screen *Screen, writePermission
 	}
 
 	// attach client to screen
-	screen.Clients = append(screen.Clients, &AttachedClient{
+	screen.AttachedClients = append(screen.AttachedClients, &AttachedClient{
 		WritePermission: writePermission,
 		CurrentScreen:   screen,
 		Client:          c,
@@ -67,11 +68,11 @@ func (m *Manager) AttachClient(c *client.Client, screen *Screen, writePermission
 // detach a client from a screen
 func (m *Manager) DetachClient(c *client.Client, screen *Screen) error {
 	// check if client is attached
-	for i, ac := range screen.Clients {
+	for i, ac := range screen.AttachedClients {
 		if ac.Client == c {
-			screen.Clients = append(
-				screen.Clients[:i],
-				screen.Clients[i+1:]...)
+			screen.AttachedClients = append(
+				screen.AttachedClients[:i],
+				screen.AttachedClients[i+1:]...)
 			return nil
 		}
 	}
@@ -82,11 +83,11 @@ func (m *Manager) DetachClient(c *client.Client, screen *Screen) error {
 // detach a client from all screens
 func (m *Manager) DetachClientFromAllScreens(c *client.Client) {
 	for _, s := range m.Screens {
-		for i, ac := range s.Clients {
+		for i, ac := range s.AttachedClients {
 			if ac.Client == c {
-				s.Clients = append(
-					s.Clients[:i],
-					s.Clients[i+1:]...)
+				s.AttachedClients = append(
+					s.AttachedClients[:i],
+					s.AttachedClients[i+1:]...)
 			}
 		}
 	}
@@ -95,7 +96,7 @@ func (m *Manager) DetachClientFromAllScreens(c *client.Client) {
 // change current screen
 func (m *Manager) ChangeScreen(c *client.Client, screen *Screen) error {
 	// check if client is attached to screen return error if not
-	for _, ac := range screen.Clients {
+	for _, ac := range screen.AttachedClients {
 		if ac.Client == c {
 			ac.CurrentScreen = screen
 			return nil
@@ -103,6 +104,57 @@ func (m *Manager) ChangeScreen(c *client.Client, screen *Screen) error {
 	}
 
 	return fmt.Errorf("client not attached to screen")
+}
+
+// get AttachedClient by client
+func (m *Manager) GetAttachedClientByClient(c *client.Client) (*AttachedClient, bool) {
+	for _, s := range m.Screens {
+		for _, ac := range s.AttachedClients {
+			if ac.Client == c {
+				return ac, true
+			}
+		}
+	}
+	return nil, false
+}
+
+// handle client input
+func (m *Manager) HandleClientInput(c *client.Client) {
+	buff := make([]byte, constants.BufferSize)
+	for {
+		n, err := c.ReadFromWS(buff) // Read from websocket
+		if err != nil {
+			log.Printf("error reading from websocket: %s\r\n", err)
+			//removeConnection(client)
+			return
+		}
+
+		s := string(buff[:n])
+		// prevent \x1b[>0;276;0c
+		if s == "\x1b[>0;276;0c" {
+			continue
+		}
+
+		// TODO: parse input and send to lua
+
+		ac, ok := m.GetAttachedClientByClient(c)
+		if !ok {
+			log.Printf("error getting attached client by client: %s\r\n", err)
+			//removeConnection(client)
+			return
+		}
+
+		if ac.WritePermission {
+			w := ac.CurrentScreen.InputResiver
+			_, err = w.Write(buff[:n]) // Write to pty
+			//_, err = io.Copy(w, strings.NewReader(string(buff[:n])))
+			if err != nil {
+				log.Printf("error writing to pty: %s\r\n", err)
+				//removeConnection(client)
+				return
+			}
+		}
+	}
 }
 
 // remove a screen
@@ -117,8 +169,8 @@ func (m *Manager) RemoveScreen(id int) error {
 	}
 
 	// move clients to default screen
-	for _, ac := range m.Screens[id].Clients {
-		m.Screens[0].Clients = append(m.Screens[0].Clients, ac)
+	for _, ac := range m.Screens[id].AttachedClients {
+		m.Screens[0].AttachedClients = append(m.Screens[0].AttachedClients, ac)
 	}
 
 	// remove screen
@@ -198,7 +250,7 @@ func (s *Screen) writeToAttachedClients() {
 		}
 
 		//connMutex.Lock()
-		for _, c := range s.Clients {
+		for _, c := range s.AttachedClients {
 			if c.CurrentScreen != s { // client is attached to this screen but is not the current screen
 				continue
 			}

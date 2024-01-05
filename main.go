@@ -30,17 +30,16 @@ import (
 var (
 	screenManager    = screen.NewManager()
 	_, defaultScreen = screenManager.GetScreenByID(0)
-	//clients          []*client.Client
-	connMutex sync.Mutex
-	ptmx      *os.File
-	GitTag    string = "0.0.0v"
-	sc        *session.Control
+	ptmx             *os.File
+	connMutex        sync.Mutex
+	GitTag           string = "0.0.0v"
+	sc               *session.Control
 )
 
 func sendToAll(command byte, params []byte) {
 	// - Mover este método para screen, e usar a lista de clientes
 	connMutex.Lock()
-	for _, c := range defaultScreen.Clients {
+	for _, c := range defaultScreen.AttachedClients {
 		err := c.Client.Send(command, params)
 		if err != nil {
 			log.Printf("error writing to websocket: %s\r\n", err)
@@ -54,7 +53,10 @@ func runCmd() {
 	// clean screen
 	//os.Stdout.WriteString("\033[2J\033[0;0H")
 
-	var err error
+	var (
+		err error
+	)
+
 	cmdAux := config.CFG.Command
 	cmd := strings.Split(cmdAux, " ")
 
@@ -79,6 +81,8 @@ func runCmd() {
 
 	pty.InheritSize(os.Stdin, ptmx)
 
+	defaultScreen.InputResiver = ptmx // resive input from from user
+
 	// Copy stdin to the pty and the pty to stdout.
 	go func() { _, _ = io.Copy(ptmx, os.Stdin) }()
 	_, _ = io.Copy(defaultScreen, ptmx)
@@ -95,22 +99,22 @@ func runCmd() {
 
 func removeAllConnections() {
 	connMutex.Lock()
-	for _, c := range defaultScreen.Clients {
+	for _, c := range defaultScreen.AttachedClients {
 		err := c.Client.Close()
 		if err != nil {
 			log.Printf("error closing websocket: %s\r\n", err)
 		}
 	}
-	defaultScreen.Clients = nil
+	defaultScreen.AttachedClients = nil
 	connMutex.Unlock()
 }
 
 func removeConnection(c *client.Client) {
 	connMutex.Lock()
-	for i, client := range defaultScreen.Clients {
+	for i, client := range defaultScreen.AttachedClients {
 		if client.Client == c {
 			client.Client.Close()
-			defaultScreen.Clients = append(defaultScreen.Clients[:i], defaultScreen.Clients[i+1:]...)
+			defaultScreen.AttachedClients = append(defaultScreen.AttachedClients[:i], defaultScreen.AttachedClients[i+1:]...)
 			break
 		}
 	}
@@ -130,34 +134,6 @@ func mainHandler(w http.ResponseWriter, r *http.Request) {
 
 	http.FileServer(assets.FS).ServeHTTP(w, r)
 
-}
-
-func HandleClientInput(c *client.Client, w io.Writer) {
-	buff := make([]byte, constants.BufferSize)
-	for {
-		n, err := c.ReadFromWS(buff)
-		if err != nil {
-			log.Printf("error reading from websocket: %s\r\n", err)
-			//removeConnection(client)
-			return
-		}
-
-		s := string(buff[:n])
-		// prevent \x1b[>0;276;0c
-		if s == "\x1b[>0;276;0c" {
-			continue
-		}
-
-		// TODO: parse input and send to lua
-
-		_, err = w.Write(buff[:n])
-		//_, err = io.Copy(w, strings.NewReader(string(buff[:n])))
-		if err != nil {
-			log.Printf("error writing to pty: %s\r\n", err)
-			//removeConnection(client)
-			return
-		}
-	}
 }
 
 func wsHandler(w http.ResponseWriter, r *http.Request) {
@@ -181,18 +157,14 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 	client := client.New(c)
 	client.SessionID = sid
 
-	motd := config.CFG.MOTD
-
 	screenManager.AttachClient(client, defaultScreen, false)
 
-	// TODO: move to screen
-	go HandleClientInput(client, ptmx)
-
-	runtime.Gosched()
+	go screenManager.HandleClientInput(client)
 
 	///////////////////////////////////////////////
 
 	// TODO: move this to screen and send evry time a client is attached to the screen
+	motd := config.CFG.MOTD
 	if motd == "" {
 		motd = "\033[1;36mcompterm\033[0m " +
 			GitTag + "\r\nWelcome to compterm, please wait...\r\n"
