@@ -2,9 +2,7 @@ package client
 
 import (
 	"context"
-	"io"
 	"log"
-	"strings"
 	"sync"
 
 	"github.com/crgimenes/compterm/constants"
@@ -101,29 +99,9 @@ func (c *Client) writeLoop() {
 		if err != nil {
 			if websocket.CloseStatus(err) != websocket.StatusNormalClosure {
 				log.Printf("error writing to websocket: %s, %v\r\n",
-					err, websocket.CloseStatus(err)) // TODO: send to file, not the screen
+					err, websocket.CloseStatus(err))
 			}
 			// removeConnection(c)
-			return
-		}
-	}
-}
-
-func (c *Client) HandleClientInput(w io.Writer) {
-	buff := make([]byte, constants.BufferSize)
-	for {
-		n, err := c.ReadFromWS(buff)
-		if err != nil {
-			log.Printf("error reading from websocket: %s\r\n", err)
-			//removeConnection(client)
-			return
-		}
-
-		// write to pty
-		_, err = io.Copy(w, strings.NewReader(string(buff[:n])))
-		if err != nil {
-			log.Printf("error writing to pty: %s\r\n", err)
-			//removeConnection(client)
 			return
 		}
 	}

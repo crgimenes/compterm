@@ -132,6 +132,34 @@ func mainHandler(w http.ResponseWriter, r *http.Request) {
 
 }
 
+func HandleClientInput(c *client.Client, w io.Writer) {
+	buff := make([]byte, constants.BufferSize)
+	for {
+		n, err := c.ReadFromWS(buff)
+		if err != nil {
+			log.Printf("error reading from websocket: %s\r\n", err)
+			//removeConnection(client)
+			return
+		}
+
+		s := string(buff[:n])
+		// prevent \x1b[>0;276;0c
+		if s == "\x1b[>0;276;0c" {
+			continue
+		}
+
+		// TODO: parse input and send to lua
+
+		_, err = w.Write(buff[:n])
+		//_, err = io.Copy(w, strings.NewReader(string(buff[:n])))
+		if err != nil {
+			log.Printf("error writing to pty: %s\r\n", err)
+			//removeConnection(client)
+			return
+		}
+	}
+}
+
 func wsHandler(w http.ResponseWriter, r *http.Request) {
 	sid, sd, ok := sc.Get(r)
 	if !ok {
@@ -158,7 +186,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 	screenManager.AttachClient(client, defaultScreen, false)
 
 	// TODO: move to screen
-	go client.HandleClientInput(ptmx)
+	go HandleClientInput(client, ptmx)
 
 	runtime.Gosched()
 
