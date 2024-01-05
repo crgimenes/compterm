@@ -24,12 +24,16 @@ type Client struct {
 }
 
 func New(conn *websocket.Conn) *Client {
-	return &Client{
+	c := &Client{
 		bs:      stream.New(),
 		conn:    conn,
 		outbuff: make([]byte, constants.BufferSize),
 		mx:      sync.Mutex{},
 	}
+
+	go c.writeLoop()
+
+	return c
 }
 
 // Send sends a message to the client using the stream
@@ -83,8 +87,8 @@ func (c *Client) Close() error {
 	return c.conn.Close(websocket.StatusNormalClosure, "")
 }
 
-// WriteLoop writes to the websocket
-func (c *Client) WriteLoop() {
+// writeLoop writes to the websocket
+func (c *Client) writeLoop() {
 	buff := make([]byte, constants.BufferSize)
 	for {
 		n, err := c.bs.Read(buff)
@@ -105,7 +109,7 @@ func (c *Client) WriteLoop() {
 	}
 }
 
-func (c *Client) ReadLoop(w io.Writer) {
+func (c *Client) HandleClientInput(w io.Writer) {
 	buff := make([]byte, constants.BufferSize)
 	for {
 		n, err := c.ReadFromWS(buff)

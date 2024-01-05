@@ -158,8 +158,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 	screenManager.AttachClient(client, defaultScreen, false)
 
 	// TODO: move to screen
-	go client.WriteLoop()
-	//go client.ReadLoop(ptmx)
+	go client.HandleClientInput(ptmx)
 
 	runtime.Gosched()
 
