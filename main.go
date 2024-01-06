@@ -81,7 +81,7 @@ func runCmd() {
 
 	pty.InheritSize(os.Stdin, ptmx)
 
-	defaultScreen.InputResiver = ptmx // resive input from from user
+	defaultScreen.Input = ptmx // resive input from from user
 
 	// Copy stdin to the pty and the pty to stdout.
 	go func() { _, _ = io.Copy(ptmx, os.Stdin) }()

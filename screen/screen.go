@@ -26,7 +26,7 @@ type Screen struct {
 	AttachedClients []*AttachedClient
 	Stream          *stream.Stream
 	mt              *mterm.Terminal // terminal emulator
-	InputResiver    io.Writer       // receive input (stdin) from attached clients and other sources
+	Input           io.Writer       // receive input (stdin) from attached clients and other sources
 }
 
 type Manager struct {
@@ -145,7 +145,7 @@ func (m *Manager) HandleInput(c *client.Client) {
 		}
 
 		if ac.WritePermission {
-			w := ac.CurrentScreen.InputResiver
+			w := ac.CurrentScreen.Input
 			_, err = w.Write(buff[:n]) // Write to pty
 			//_, err = io.Copy(w, strings.NewReader(string(buff[:n])))
 			if err != nil {
@@ -169,9 +169,9 @@ func (m *Manager) RemoveScreen(id int) error {
 	}
 
 	// move clients to default screen
-	for _, ac := range m.Screens[id].AttachedClients {
-		m.Screens[0].AttachedClients = append(m.Screens[0].AttachedClients, ac)
-	}
+	m.Screens[0].AttachedClients = append(
+		m.Screens[0].AttachedClients,
+		m.Screens[id].AttachedClients...)
 
 	// remove screen
 	m.Screens = append(m.Screens[:id], m.Screens[id+1:]...)
