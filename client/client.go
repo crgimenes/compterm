@@ -19,6 +19,7 @@ type Client struct {
 	SessionID string
 	outbuff   []byte // used to avoid memory allocation on each write
 	mx        sync.Mutex
+	done      chan struct{} // used to close the writeLoop goroutine
 }
 
 func New(conn *websocket.Conn) *Client {
@@ -27,11 +28,17 @@ func New(conn *websocket.Conn) *Client {
 		conn:    conn,
 		outbuff: make([]byte, constants.BufferSize),
 		mx:      sync.Mutex{},
+		done:    make(chan struct{}),
 	}
 
 	go c.writeLoop()
 
 	return c
+}
+
+func (c *Client) Close() {
+	close(c.done)
+	c.conn.Close(websocket.StatusNormalClosure, "")
 }
 
 // Send sends a message to the client using the stream
@@ -80,29 +87,30 @@ func (c *Client) ReadFromWS(p []byte) (n int, err error) {
 	return n, nil
 }
 
-// Close closes the websocket connection
-func (c *Client) Close() error {
-	return c.conn.Close(websocket.StatusNormalClosure, "")
-}
-
 // writeLoop writes to the websocket
 func (c *Client) writeLoop() {
 	buff := make([]byte, constants.BufferSize)
 	for {
-		n, err := c.bs.Read(buff)
-		if err != nil {
-			log.Printf("error reading from byte stream: %s\r\n", err)
+		select {
+		case <-c.done:
 			return
-		}
-
-		err = c.conn.Write(context.Background(), websocket.MessageBinary, buff[:n])
-		if err != nil {
-			if websocket.CloseStatus(err) != websocket.StatusNormalClosure {
-				log.Printf("error writing to websocket: %s, %v\r\n",
-					err, websocket.CloseStatus(err))
+		default:
+			n, err := c.bs.Read(buff)
+			if err != nil {
+				log.Printf("error reading from byte stream: %s\r\n", err)
+				return
 			}
-			// removeConnection(c)
-			return
+
+			err = c.conn.Write(context.Background(), websocket.MessageBinary, buff[:n])
+			if err != nil {
+				if websocket.CloseStatus(err) != websocket.StatusNormalClosure {
+					log.Printf("error writing to websocket: %s, %v\r\n",
+						err, websocket.CloseStatus(err))
+				}
+				// removeConnection(c)
+				close(c.done)
+				return
+			}
 		}
 	}
 }

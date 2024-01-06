@@ -145,9 +145,7 @@ func (m *Manager) HandleInput(c *client.Client) {
 		}
 
 		if ac.WritePermission {
-			w := ac.CurrentScreen.Input
-			_, err = w.Write(buff[:n]) // Write to pty
-			//_, err = io.Copy(w, strings.NewReader(string(buff[:n])))
+			_, err = ac.CurrentScreen.Input.Write(buff[:n]) // Write to pty
 			if err != nil {
 				log.Printf("error writing to pty: %s\r\n", err)
 				//removeConnection(client)
