@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/crgimenes/compterm/assets"
-	"github.com/crgimenes/compterm/client"
 	"github.com/crgimenes/compterm/config"
 	"github.com/crgimenes/compterm/constants"
 	"github.com/crgimenes/compterm/luaengine"
@@ -39,11 +38,11 @@ var (
 func sendToAll(command byte, params []byte) {
 	// - Mover este método para screen, e usar a lista de clientes
 	connMutex.Lock()
-	for _, c := range defaultScreen.AttachedClients {
-		err := c.Client.Send(command, params)
+	for _, c := range defaultScreen.Clients {
+		err := c.Send(command, params)
 		if err != nil {
 			log.Printf("error writing to websocket: %s\r\n", err)
-			removeConnection(c.Client)
+			removeConnection(c)
 		}
 	}
 	connMutex.Unlock()
@@ -99,22 +98,21 @@ func runCmd() {
 
 func removeAllConnections() {
 	connMutex.Lock()
-	for _, c := range defaultScreen.AttachedClients {
-		err := c.Client.Close()
-		if err != nil {
-			log.Printf("error closing websocket: %s\r\n", err)
-		}
+	for _, c := range defaultScreen.Clients {
+		c.Close()
 	}
-	defaultScreen.AttachedClients = nil
+	defaultScreen.Clients = nil
 	connMutex.Unlock()
 }
 
-func removeConnection(c *client.Client) {
+func removeConnection(c *screen.Client) {
 	connMutex.Lock()
-	for i, client := range defaultScreen.AttachedClients {
-		if client.Client == c {
-			client.Client.Close()
-			defaultScreen.AttachedClients = append(defaultScreen.AttachedClients[:i], defaultScreen.AttachedClients[i+1:]...)
+	for i, client := range defaultScreen.Clients {
+		if client == c {
+			client.Close()
+			defaultScreen.Clients = append(
+				defaultScreen.Clients[:i],
+				defaultScreen.Clients[i+1:]...)
 			break
 		}
 	}
@@ -154,10 +152,10 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	client := client.New(c)
+	client := screen.NewClient(c)
 	client.SessionID = sid
 
-	screenManager.AttachClient(client, defaultScreen, false)
+	screenManager.AttachClient(client, defaultScreen, true)
 
 	go screenManager.HandleInput(client)
 
