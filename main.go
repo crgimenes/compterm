@@ -30,24 +30,10 @@ var (
 	screenManager    = screen.NewManager()
 	_, defaultScreen = screenManager.GetScreenByID(0)
 	ptmx             *os.File
-	connMutex        sync.Mutex
 	GitTag           string = "0.0.0v"
 	sc               *session.Control
 	mx               sync.Mutex
 )
-
-func sendToAll(command byte, params []byte) {
-	// - Mover este método para screen, e usar a lista de clientes
-	connMutex.Lock()
-	for _, c := range defaultScreen.Clients {
-		err := c.Send(command, params)
-		if err != nil {
-			log.Printf("error writing to websocket: %s\r\n", err)
-			removeConnection(c)
-		}
-	}
-	connMutex.Unlock()
-}
 
 func runCmd() {
 	// clean screen
@@ -87,39 +73,30 @@ func runCmd() {
 
 	// Copy stdin to the pty and the pty to stdout.
 	go func() { _, _ = io.Copy(ptmx, os.Stdin) }()
-	_, _ = io.Copy(defaultScreen, ptmx)
+	//_, _ = io.Copy(defaultScreen, ptmx)
+
+	go func() {
+		buf := make([]byte, 1024)
+		for {
+			n, err := ptmx.Read(buf)
+			if err != nil {
+				if err == io.EOF {
+					return
+				}
+				log.Fatalf("error reading from pty: %s\r\n", err)
+			}
+			if n > 0 {
+				defaultScreen.Write(buf[:n])
+				os.Stdout.Write(buf[:n])
+			}
+		}
+	}()
 
 	// Wait for the command to finish.
 	err = c.Wait()
 	if err != nil {
 		log.Fatalf("error waiting for command: %s\r\n", err)
 	}
-
-	// Close the websocket connections
-	removeAllConnections()
-}
-
-func removeAllConnections() {
-	connMutex.Lock()
-	for _, c := range defaultScreen.Clients {
-		c.Close()
-	}
-	defaultScreen.Clients = nil
-	connMutex.Unlock()
-}
-
-func removeConnection(c *screen.Client) {
-	connMutex.Lock()
-	for i, client := range defaultScreen.Clients {
-		if client == c {
-			client.Close()
-			defaultScreen.Clients = append(
-				defaultScreen.Clients[:i],
-				defaultScreen.Clients[i+1:]...)
-			break
-		}
-	}
-	connMutex.Unlock()
 }
 
 func mainHandler(w http.ResponseWriter, r *http.Request) {
@@ -135,6 +112,22 @@ func mainHandler(w http.ResponseWriter, r *http.Request) {
 
 	http.FileServer(assets.FS).ServeHTTP(w, r)
 
+}
+
+type dummyProvider struct {
+	Screen *screen.Screen
+}
+
+func (d dummyProvider) Write(p []byte) (n int, err error) {
+	d.Screen.Write([]byte(fmt.Sprintf("- %s\r\n", string(p))))
+	return len(p), nil
+}
+
+func (d dummyProvider) LoopWrite() {
+	for {
+		time.Sleep(1 * time.Second)
+		d.Screen.Write([]byte(fmt.Sprintf("dummyProvider: %s\r\n", time.Now().String())))
+	}
 }
 
 func wsHandler(w http.ResponseWriter, r *http.Request) {
@@ -158,8 +151,21 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 	client := screen.NewClient(c)
 	client.SessionID = sid
 
+	///////////////////////////////////////////////
 	defaultScreen.AttachClient(client, false)
+	/*
+			// TODO: use the manager to create a new screen
+			// TODO: enable change screen
 
+		   // test dummyProvider
+		   s := screen.New(24, 80)
+
+		   d := dummyProvider{Screen: s}
+		   s.Input = d
+
+		   go d.LoopWrite()
+		   s.AttachClient(client, true)
+	*/
 }
 
 func serveHTTP() {
@@ -201,11 +207,12 @@ func apiHandler(w http.ResponseWriter, r *http.Request) {
 		// curl -X GET http://localhost:2201/api/action/enable-ws-stream
 
 		rows, columns := defaultScreen.Size()
+		s := defaultScreen
 
-		sendToAll(
+		s.Send(
 			constants.MSG,
 			[]byte(fmt.Sprintf("\033[8;%d;%dt\033[2J\033[0;0H", rows, columns)))
-		sendToAll(
+		s.Send(
 			constants.RESIZE,
 			[]byte(fmt.Sprintf("%d:%d", rows, columns)))
 	case "disable-ws-stream":
@@ -332,15 +339,12 @@ func main() {
 
 	// Handle signals
 	ch := make(chan os.Signal, 1)
-	signal.Notify(ch, syscall.SIGWINCH) //, syscall.SIGTERM, os.Interrupt)
+	signal.Notify(ch, syscall.SIGWINCH)
 	go func() {
 		for caux := range ch {
 			switch caux {
 			case syscall.SIGWINCH:
 				updateTerminalSize()
-				//case syscall.SIGTERM, os.Interrupt:
-				//	removeAllConnections()
-				//	os.Exit(0)
 			}
 		}
 	}()
@@ -354,6 +358,7 @@ func main() {
 	//go writeAllWS()
 	go serveAPI()
 	go serveHTTP()
+
 	runtime.Gosched()
 
 	runCmd()

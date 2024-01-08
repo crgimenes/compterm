@@ -5,8 +5,11 @@ LDFLAGS = -X 'main.GitTag=$(GIT_TAG)' -w -s
 all: js
 	go build -o $(BINARY_NAME) -ldflags "$(LDFLAGS)" .
 
-dev: js-dev
+dev-race: js-dev
 	go run -race -tags dev .
+
+dev: js-dev
+	go run -tags dev .
 
 js-deps:
 	npm clean-install --legacy-peer-deps

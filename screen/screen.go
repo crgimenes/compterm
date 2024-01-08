@@ -273,16 +273,18 @@ func (s *Screen) writeToAttachedClients() {
 // Writer interface
 func (s *Screen) Write(p []byte) (n int, err error) {
 	// write to stdout
-	n, err = os.Stdout.Write(p)
-	if err != nil {
-		log.Printf("error writing to stdout: %s\r\n", err)
-		return
-	}
+	//n, err = os.Stdout.Write(p)
+	//if err != nil {
+	//	log.Printf("error writing to stdout: %s\r\n", err)
+	//	return
+	//}
 
 	s.mt.Write(p) // write to mterm buffer
 
 	// write to websocket
 	s.Stream.Write(p)
+
+	n = len(p)
 	return
 }
 
@@ -305,12 +307,19 @@ func (s *Screen) Read(p []byte) (n int, err error) {
 }
 
 func (s *Screen) Send(prefix byte, p []byte) (err error) {
-	for _, c := range s.Clients {
+	//s.mx.Lock()
+	//defer s.mx.Unlock()
+	for i, c := range s.Clients {
 		err = c.Send(prefix, p)
 		if err != nil {
 			log.Printf("error writing to websocket: %s\r\n", err)
 			c.Close()
-			s.RemoveAttachedClient(c)
+			// remove client
+			s.Clients = append(
+				s.Clients[:i],
+				s.Clients[i+1:]...)
+			// remove client properties
+			s.ClientsProperties[c] = nil
 			continue
 		}
 	}
