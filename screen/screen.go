@@ -22,13 +22,14 @@ type ScreenClientProperties struct {
 
 type Screen struct {
 	Title             string
-	Columns           int
-	Rows              int
+	columns           int
+	rows              int
 	Clients           []*Client // Attached clients
 	ClientsProperties map[*Client]*ScreenClientProperties
 	Stream            *stream.Stream
 	mt                *mterm.Terminal // terminal emulator
 	Input             io.Writer       // receive input (stdin) from attached clients and other sources
+	mx                sync.Mutex
 }
 
 type Manager struct {
@@ -57,38 +58,39 @@ func NewManager() *Manager {
 }
 
 // attach a client to a screen
-func (m *Manager) AttachClient(c *Client, screen *Screen, writePermission bool) error {
+func (s *Screen) AttachClient(c *Client, writePermission bool) error {
+	s.mx.Lock()
+	defer s.mx.Unlock()
 	// check if client is already attached
-	for _, ac := range screen.Clients {
+	for _, ac := range s.Clients {
 		if ac == c {
-			ac.CurrentScreen = screen
-			screen.ClientsProperties[c].WritePermission = writePermission
-			// TODO: send resize, clear screen, send cursor position and screen to client
+			ac.CurrentScreen = s
+			s.ClientsProperties[c].WritePermission = writePermission
+			s.updateToCurrentState(c)
 			return nil
 		}
 	}
 
 	// attach client to screen
-	screen.Clients = append(screen.Clients, c)
-	screen.ClientsProperties[c] = &ScreenClientProperties{
+	s.Clients = append(s.Clients, c)
+	s.ClientsProperties[c] = &ScreenClientProperties{
 		WritePermission: writePermission,
 	}
-	c.CurrentScreen = screen
-
-	// TODO: send resize, clear screen, send cursor position and screen to client
+	c.CurrentScreen = s
+	s.updateToCurrentState(c)
 
 	return nil
 }
 
 // detach a client from a screen
-func (m *Manager) DetachClient(c *Client, screen *Screen) error {
+func (s *Screen) DetachClient(c *Client) error {
 	// check if client is attached
-	for i, ac := range screen.Clients {
+	for i, ac := range s.Clients {
 		if ac == c {
-			screen.Clients = append(
-				screen.Clients[:i],
-				screen.Clients[i+1:]...)
-			screen.ClientsProperties[c] = nil
+			s.Clients = append(
+				s.Clients[:i],
+				s.Clients[i+1:]...)
+			s.ClientsProperties[c] = nil
 			return nil
 		}
 	}
@@ -99,23 +101,17 @@ func (m *Manager) DetachClient(c *Client, screen *Screen) error {
 // detach a client from all screens
 func (m *Manager) DetachClientFromAllScreens(c *Client) {
 	for _, s := range m.Screens {
-		for i, ac := range s.Clients {
-			if ac == c {
-				s.Clients = append(
-					s.Clients[:i],
-					s.Clients[i+1:]...)
-				s.ClientsProperties[c] = nil
-			}
-		}
+		s.DetachClient(c)
 	}
 }
 
 // change current screen
-func (m *Manager) ChangeScreen(c *Client, screen *Screen) error {
+func (m *Manager) ChangeScreen(c *Client, s *Screen) error {
 	// check if client is attached to screen return error if not
-	for _, ac := range screen.Clients {
+	for _, ac := range s.Clients {
 		if ac == c {
-			ac.CurrentScreen = screen
+			ac.CurrentScreen = s
+			s.updateToCurrentState(c)
 			return nil
 		}
 	}
@@ -124,96 +120,78 @@ func (m *Manager) ChangeScreen(c *Client, screen *Screen) error {
 }
 
 // handle client input
-func (m *Manager) HandleInput(c *Client) {
+func (c *Client) HandleInput() {
 	buff := make([]byte, constants.BufferSize)
 	for {
-		n, err := c.ReadFromWS(buff) // Read from websocket
-		if err != nil {
-			sc := websocket.CloseStatus(err)
-			if sc != websocket.StatusNormalClosure && sc != -1 {
-				log.Printf("error reading from websocket: %s\r\n", err)
-			}
-			c.Close()
-			//removeConnection(client)
+		select {
+		case <-c.done:
 			return
-		}
-
-		s := string(buff[:n])
-		// prevent \x1b[>0;276;0c
-		if s == "\x1b[>0;276;0c" {
-			continue
-		}
-
-		// TODO: parse input and send to lua
-
-		ac := c.CurrentScreen.ClientsProperties[c]
-
-		if ac.WritePermission {
-			_, err = c.CurrentScreen.Input.Write(buff[:n]) // Write to pty
+		default:
+			n, err := c.ReadFromWS(buff) // Read from websocket
 			if err != nil {
-				log.Printf("error writing to pty: %s\r\n", err)
+				cs := websocket.CloseStatus(err)
+				if cs != websocket.StatusNormalClosure &&
+					cs != websocket.StatusGoingAway &&
+					cs != -1 {
+					log.Printf("error reading from websocket: %s\r\n", err)
+				}
 				c.Close()
-				//removeConnection(client)
 				return
+			}
+
+			s := string(buff[:n])
+			// prevent \x1b[>0;276;0c
+			if s == "\x1b[>0;276;0c" {
+				continue
+			}
+
+			// TODO: parse input and send to lua
+
+			ac := c.CurrentScreen.ClientsProperties[c]
+
+			if ac.WritePermission {
+				_, err = c.CurrentScreen.Input.Write(buff[:n]) // Write to pty
+				if err != nil {
+					log.Printf("error writing to pty: %s\r\n", err)
+					c.Close()
+					return
+				}
 			}
 		}
 	}
 }
 
 // remove a screen
-func (m *Manager) RemoveScreen(id int) error {
-	// screen 0 is the default screen and can't be removed
-	if id == 0 {
-		return fmt.Errorf("can't remove default screen")
-	}
-
-	if id < 0 || id > len(m.Screens) {
-		return fmt.Errorf("invalid screen id")
-	}
+func (m *Manager) RemoveScreen(s *Screen) error {
 
 	// move clients to default screen
 	// TODO: check if client is attached to screen
 	// TODO: check client write permission
 	// TODO: send resize, clear screen, send cursor position and screen to client
-	m.Screens[0].Clients = append(
-		m.Screens[0].Clients,
-		m.Screens[id].Clients...)
-
-	// remove screen
-	m.Screens = append(m.Screens[:id], m.Screens[id+1:]...)
-
-	return nil
-}
-
-// remove screen and kill clients
-func (m *Manager) KillScreen(id int) error {
-	// screen 0 is the default screen and can't be removed
-	if id == 0 {
-		return fmt.Errorf("can't remove default screen")
-	}
-
-	if id < 0 || id > len(m.Screens) {
-		return fmt.Errorf("invalid screen id")
-	}
-
 	// TODO: kill clients
 
 	// remove screen
-	m.Screens = append(m.Screens[:id], m.Screens[id+1:]...)
+	for i, sc := range m.Screens {
+		if sc == s {
+			// TODO: kill clients
+			m.Screens = append(
+				m.Screens[:i],
+				m.Screens[i+1:]...)
+		}
+	}
 
 	return nil
 }
 
 // get default screen
 func (m *Manager) GetDefaultScreen() *Screen {
+	// todo check if default screen exists
 	return m.Screens[0]
 }
 
 // get screen by id
 func (m *Manager) GetScreenByID(id int) (bool, *Screen) {
-	if id < 0 || id > len(m.Screens) {
-		return false, nil
-	}
+	// todo check if screen exists
 	return true, m.Screens[id]
 }
 
@@ -229,16 +207,29 @@ func (m *Manager) GetScreenByTitle(title string) (bool, *Screen) {
 
 func New(rows, columns int) *Screen {
 	s := &Screen{
-		Columns:           columns,
-		Rows:              rows,
+		columns:           columns,
+		rows:              rows,
 		Stream:            stream.New(),
 		mt:                mterm.New(rows, columns),
 		ClientsProperties: make(map[*Client]*ScreenClientProperties),
+		//mx:                sync.Mutex{},
 	}
 
 	go s.writeToAttachedClients()
 
 	return s
+}
+
+func (s *Screen) RemoveAttachedClient(c *Client) {
+	for i, ac := range s.Clients {
+		if ac == c {
+			s.Clients = append(
+				s.Clients[:i],
+				s.Clients[i+1:]...)
+			s.ClientsProperties[c] = nil
+			return
+		}
+	}
 }
 
 func (s *Screen) writeToAttachedClients() {
@@ -251,24 +242,31 @@ func (s *Screen) writeToAttachedClients() {
 				continue
 			}
 			log.Printf("error reading from byte stream: %s\r\n", err)
-
-			//removeAllConnections()
 			os.Exit(1)
 		}
 
-		//connMutex.Lock()
-		for _, c := range s.Clients {
-			if c.CurrentScreen != s { // client is attached to this screen but is not the current screen
-				continue
+		func() {
+			s.mx.Lock()
+			defer s.mx.Unlock()
+			for _, c := range s.Clients {
+				select {
+				case <-c.done:
+					s.RemoveAttachedClient(c)
+					continue
+				default:
+					if c.CurrentScreen != s { // client is attached to this screen but is not the current screen
+						continue
+					}
+					err = c.Send(constants.MSG, msg[:n])
+					if err != nil {
+						log.Printf("error writing to websocket: %s\r\n", err)
+						c.Close()
+						s.RemoveAttachedClient(c)
+						continue
+					}
+				}
 			}
-			err = c.Send(constants.MSG, msg[:n])
-			if err != nil {
-				log.Printf("error writing to websocket: %s\r\n", err)
-				//removeConnection(c)
-				continue
-			}
-		}
-		//connMutex.Unlock()
+		}()
 	}
 }
 
@@ -288,27 +286,62 @@ func (s *Screen) Write(p []byte) (n int, err error) {
 	return
 }
 
+func (s *Screen) updateToCurrentState(c *Client) {
+	crows, ccolumns := s.CursorPos()
+	msg := s.GetScreenAsANSI()
+
+	c.Send(constants.RESIZE,
+		[]byte(fmt.Sprintf("%d:%d", s.rows, s.columns)))
+
+	m := fmt.Sprintf("\033[8;%d;%dt\033[0;0H%s\033[%d;%dH",
+		s.rows, s.columns, msg, crows+1, ccolumns+1)
+
+	c.Send(constants.MSG, []byte(m))
+
+}
+
 func (s *Screen) Read(p []byte) (n int, err error) {
 	return s.Stream.Read(p)
 }
 
+func (s *Screen) Send(prefix byte, p []byte) (err error) {
+	for _, c := range s.Clients {
+		err = c.Send(prefix, p)
+		if err != nil {
+			log.Printf("error writing to websocket: %s\r\n", err)
+			c.Close()
+			s.RemoveAttachedClient(c)
+			continue
+		}
+	}
+
+	return nil
+}
+
 // Resize screen
 func (s *Screen) Resize(rows, columns int) {
-	s.Rows = rows
-	s.Columns = columns
+	s.mx.Lock()
+	defer s.mx.Unlock()
+	if rows == s.rows && columns == s.columns {
+		return
+	}
+
+	s.rows = rows
+	s.columns = columns
 	s.mt.Resize(rows, columns)
 
 	s.Write([]byte(fmt.Sprintf("\033[8;%d;%dt",
-		s.Rows,
-		s.Columns,
+		s.rows,
+		s.columns,
 	)))
 
-	// TODO: send resize to clients
+	s.Send(constants.RESIZE,
+		[]byte(fmt.Sprintf("%d:%d", rows, columns)))
 }
 
 // Get screen size
 func (s *Screen) Size() (rows, columns int) {
-	return s.Rows, s.Columns
+	return s.rows, s.columns
 }
 
 // GetScreenAsANSI returns the screen as ANSI
@@ -331,6 +364,7 @@ func NewClient(conn *websocket.Conn) *Client {
 	}
 
 	go c.writeLoop()
+	go c.HandleInput()
 
 	return c
 }
@@ -408,7 +442,9 @@ func (c *Client) writeLoop() {
 			err = c.conn.Write(context.Background(), websocket.MessageBinary, buff[:n])
 			if err != nil {
 				cs := websocket.CloseStatus(err)
-				if cs != websocket.StatusNormalClosure && cs != -1 {
+				if cs != websocket.StatusNormalClosure &&
+					cs != websocket.StatusGoingAway &&
+					cs != -1 {
 					log.Printf("error writing to websocket: %s, %v\r\n",
 						err, cs)
 				}

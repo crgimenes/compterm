@@ -33,6 +33,7 @@ var (
 	connMutex        sync.Mutex
 	GitTag           string = "0.0.0v"
 	sc               *session.Control
+	mx               sync.Mutex
 )
 
 func sendToAll(command byte, params []byte) {
@@ -61,10 +62,12 @@ func runCmd() {
 
 	c := exec.Command(cmd[0], cmd[1:]...)
 	// Start the command with a pty.
+	mx.Lock()
 	ptmx, err = pty.Start(c)
 	if err != nil {
 		log.Fatalf("error starting pty: %s\r\n", err)
 	}
+	mx.Unlock()
 
 	// Set stdin in raw mode.
 	oldState, err := term.MakeRaw(int(os.Stdin.Fd()))
@@ -155,9 +158,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 	client := screen.NewClient(c)
 	client.SessionID = sid
 
-	screenManager.AttachClient(client, defaultScreen, true)
-
-	go screenManager.HandleInput(client)
+	defaultScreen.AttachClient(client, true)
 
 	///////////////////////////////////////////////
 
@@ -167,29 +168,6 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 		motd = "\033[1;36mcompterm\033[0m " +
 			GitTag + "\r\nWelcome to compterm, please wait...\r\n"
 	}
-
-	client.Send(constants.MSG, []byte(motd))
-
-	// get terminal size
-	rows, columns := defaultScreen.Size()
-	crows, ccolumns := defaultScreen.CursorPos()
-
-	// send current terminal size (resize the xtermjs terminal)
-	client.Send(constants.RESIZE,
-		[]byte(fmt.Sprintf("%d:%d", rows, columns)))
-
-	// set terminal size, clear screen and set cursor to 0,0
-	client.Send(constants.MSG, []byte(fmt.Sprintf("\033[8;%d;%dt\033[0;0H",
-		rows, columns)))
-
-	// get screen as ansi from mterm buffer
-	msg := defaultScreen.GetScreenAsANSI()
-
-	// send screen to xtermjs terminal
-	client.Send(constants.MSG, []byte(msg))
-
-	// set cursor position to the current position
-	client.Send(constants.MSG, []byte(fmt.Sprintf("\033[%d;%dH", crows+1, ccolumns+1)))
 }
 
 func serveHTTP() {
@@ -271,16 +249,15 @@ func serveAPI() {
 
 func updateTerminalSize() {
 	// Update window size.
+	mx.Lock()
 	_ = pty.InheritSize(os.Stdin, ptmx)
+	mx.Unlock()
 	columns, rows, err := term.GetSize(int(os.Stdin.Fd()))
 	if err != nil {
 		log.Fatalf("error getting size: %s\r\n", err)
 	}
 
 	defaultScreen.Resize(rows, columns)
-
-	sendToAll(constants.RESIZE,
-		[]byte(fmt.Sprintf("%d:%d", rows, columns)))
 }
 
 func main() {

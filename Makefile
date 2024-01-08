@@ -6,7 +6,7 @@ all: js
 	go build -o $(BINARY_NAME) -ldflags "$(LDFLAGS)" .
 
 dev: js-dev
-	go run -tags dev .
+	go run -race -tags dev .
 
 js-deps:
 	npm clean-install --legacy-peer-deps
