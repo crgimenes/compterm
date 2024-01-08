@@ -158,16 +158,8 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 	client := screen.NewClient(c)
 	client.SessionID = sid
 
-	defaultScreen.AttachClient(client, true)
+	defaultScreen.AttachClient(client, false)
 
-	///////////////////////////////////////////////
-
-	// TODO: move this to screen and send evry time a client is attached to the screen
-	motd := config.CFG.MOTD
-	if motd == "" {
-		motd = "\033[1;36mcompterm\033[0m " +
-			GitTag + "\r\nWelcome to compterm, please wait...\r\n"
-	}
 }
 
 func serveHTTP() {
