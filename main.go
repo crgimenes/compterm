@@ -114,21 +114,27 @@ func mainHandler(w http.ResponseWriter, r *http.Request) {
 
 }
 
+///////////////////////////////////////////////
+
 type dummyProvider struct {
 	Screen *screen.Screen
 }
 
 func (d dummyProvider) Write(p []byte) (n int, err error) {
+	// input from webbrowser / websocket
 	d.Screen.Write([]byte(fmt.Sprintf("- %s\r\n", string(p))))
 	return len(p), nil
 }
 
 func (d dummyProvider) LoopWrite() {
+	// output to webbrowser / websocket
 	for {
 		time.Sleep(1 * time.Second)
 		d.Screen.Write([]byte(fmt.Sprintf("dummyProvider: %s\r\n", time.Now().String())))
 	}
 }
+
+///////////////////////////////////////////////
 
 func wsHandler(w http.ResponseWriter, r *http.Request) {
 	sid, sd, ok := sc.Get(r)

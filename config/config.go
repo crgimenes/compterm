@@ -12,6 +12,7 @@ import (
 type Config struct {
 	Debug     bool
 	IgnorePID bool
+	ProxyMode bool
 	Listen    string
 	APIListen string
 	Command   string
@@ -85,6 +86,7 @@ func Load() error {
 	flag.BoolVar(&CFG.Debug, "debug", CFG.Debug, "")
 	flag.StringVar(&CFG.InitFile, "init", CFG.InitFile, "")
 	flag.BoolVar(&CFG.IgnorePID, "ignore_pid", CFG.IgnorePID, "")
+	flag.BoolVar(&CFG.ProxyMode, "proxy_mode", CFG.ProxyMode, "")
 
 	p := func(msg string) {
 		_, _ = os.Stderr.WriteString(msg)
