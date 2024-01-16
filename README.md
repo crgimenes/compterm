@@ -2,29 +2,17 @@
 
 Compterm is a versatile terminal sharing application designed for a variety of use cases, including educational, developmental, and nostalgic experiences. It's particularly useful for the Brazilian Golang Study Group, the Atomic Blast BBS system, and for efficient, low-bandwidth pair programming sessions.
 
-# Key Features
-
-- Terminal Sharing for Study Groups: Enables participants of the Brazilian Golang Study Group to view and discuss the same terminal, enhancing collaborative learning and code discussion.
-- BBS System Interface: Acts as a terminal for accessing the Atomic Blast BBS, emulating the look and feel of classic 90s BBSs.
-- Efficient Pair Programming: Facilitates quick and easy terminal sharing for pair programming, minimizing bandwidth usage.
-
 # Installation
 
 To use Compterm, Go developers can build the program for production using:
 
 ```bash
-Copy code
-go build -ldflags '-s -w'
-# or
 make
 ```
 
 For development mode, which uses resources from the assets directory, use:
 
 ```bash
-Copy code
-go run -tags dev .
-# or
 make dev
 ```
 
@@ -46,16 +34,11 @@ It also recognizes these environment variables:
 - $COMPTERM_C string
 - $COMPTERM_MOTD string (default "")
 
-Additionally, you can configure Compterm using a config.ini file located in ~/.config/compterm/config.ini with the following parameters:
-
-- debug
-- listen
-- command
-- motd
+Additionally, you can configure Compterm using a init.lua file located in ~/.config/compterm/init.lua.
 
 ## Configuration Hierarchy
 
-Command-line parameters override environment variables, which in turn override the configuration file settings.
+Command-line parameters override environment variables, and the lua in the init.lua can override both variables and commands.
 
 # Contributing
 
@@ -63,5 +46,5 @@ Contributions are welcome! Please refer to our contribution guidelines for detai
 
 # License
 
-This project is licensed under [include license type here], see the LICENSE file for details.
+This project is licensed under MIT, see the [LICENSE](LICENSE) file for details.
 
