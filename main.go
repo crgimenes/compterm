@@ -95,7 +95,8 @@ func runCmd() {
 	// Wait for the command to finish.
 	err = c.Wait()
 	if err != nil {
-		log.Fatalf("error waiting for command: %s\r\n", err)
+		log.Printf("error waiting for command: %s\r\n", err)
+		// TODO: send error to screen and close clients
 	}
 }
 

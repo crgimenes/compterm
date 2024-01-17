@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"os"
 	"sync"
 	"time"
 
@@ -242,7 +241,7 @@ func (s *Screen) writeToAttachedClients() {
 				continue
 			}
 			log.Printf("error reading from byte stream: %s\r\n", err)
-			os.Exit(1)
+			//os.Exit(1) // TODO: handle error
 		}
 
 		func() {
