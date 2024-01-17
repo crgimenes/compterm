@@ -18,6 +18,7 @@ import (
 	"github.com/crgimenes/compterm/config"
 	"github.com/crgimenes/compterm/constants"
 	"github.com/crgimenes/compterm/luaengine"
+	"github.com/crgimenes/compterm/prelude"
 	"github.com/crgimenes/compterm/screen"
 	"github.com/crgimenes/compterm/session"
 
@@ -195,16 +196,16 @@ func serveHTTP() {
 }
 
 func apiHandler(w http.ResponseWriter, r *http.Request) {
-	_, err := prelude(w, r, []string{http.MethodGet}, true)
+	_, err := prelude.Prepare(w, r, []string{http.MethodGet}, true)
 	if err != nil {
 		return
 	}
 
-	parameters := getParameters("/api/action/", r)
+	parameters := prelude.GetParameters("/api/action/", r)
 
 	if len(parameters) < 1 {
 		log.Printf("invalid path")
-		errorBadRequest(w)
+		prelude.RErrorBadRequest(w)
 		return
 	}
 
@@ -230,7 +231,7 @@ func apiHandler(w http.ResponseWriter, r *http.Request) {
 
 		_, _ = w.Write([]byte(GitTag))
 	default:
-		errorBadRequest(w)
+		prelude.RErrorBadRequest(w)
 		return
 	}
 	_, _ = w.Write([]byte("{status: \"ok\"}\n"))

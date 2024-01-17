@@ -1,4 +1,4 @@
-package main
+package prelude
 
 import (
 	"errors"
@@ -10,6 +10,8 @@ import (
 )
 
 var (
+	GitTag string
+
 	ErrorUnauthorized       = errors.New("Unauthorized")
 	ErrorMethodNotAllowed   = errors.New("Method Not Allowed")
 	ErrorInternalServer     = errors.New("Internal Server Error")
@@ -17,27 +19,27 @@ var (
 	ErrorInvalidData        = errors.New("invalid data")
 )
 
-func errorMethodNotAllowed(w http.ResponseWriter) {
+func RErrorMethodNotAllowed(w http.ResponseWriter) {
 	w.WriteHeader(http.StatusMethodNotAllowed)
 	w.Write([]byte(`{"error": "method not allowed"}`))
 }
 
-func errorBadRequest(w http.ResponseWriter) {
+func RErrorBadRequest(w http.ResponseWriter) {
 	w.WriteHeader(http.StatusBadRequest)
 	w.Write([]byte(`{"error": "bad request"}`))
 }
 
-func errorInternalServer(w http.ResponseWriter) {
+func RErrorInternalServer(w http.ResponseWriter) {
 	w.WriteHeader(http.StatusInternalServerError)
 	w.Write([]byte(`{"error": "internal server error"}`))
 }
 
-func errorUnauthorized(w http.ResponseWriter) {
+func RErrorUnauthorized(w http.ResponseWriter) {
 	w.WriteHeader(http.StatusUnauthorized)
 	w.Write([]byte(`{"error": "unauthorized"}`))
 }
 
-func errorNotFound(w http.ResponseWriter) {
+func RErrorNotFound(w http.ResponseWriter) {
 	w.WriteHeader(http.StatusNotFound)
 	w.Write([]byte(`{"error": "not found"}`))
 }
@@ -51,7 +53,7 @@ type RequestData struct {
 	Form    map[string][]string
 }
 
-func getParameters(prefix string, r *http.Request) []string {
+func GetParameters(prefix string, r *http.Request) []string {
 	path := strings.TrimPrefix(r.URL.Path, prefix)
 	path = strings.TrimSuffix(path, "/")
 	path = strings.TrimSpace(path)
@@ -70,7 +72,7 @@ func getParameters(prefix string, r *http.Request) []string {
 	return b[:i]
 }
 
-func prelude(w http.ResponseWriter, r *http.Request, methods []string, chkAuth bool) (*RequestData, error) {
+func Prepare(w http.ResponseWriter, r *http.Request, methods []string, chkAuth bool) (*RequestData, error) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("X-API-Version", GitTag)
 
@@ -85,13 +87,13 @@ func prelude(w http.ResponseWriter, r *http.Request, methods []string, chkAuth b
 	if chkAuth {
 		key := r.Header.Get("X-API-Key")
 		if key != config.CFG.APIKey {
-			errorUnauthorized(w)
+			RErrorUnauthorized(w)
 			return nil, ErrorUnauthorized
 		}
 	}
 
 	if !methodAllowed {
-		errorMethodNotAllowed(w)
+		RErrorMethodNotAllowed(w)
 		return nil, ErrorMethodNotAllowed
 	}
 
@@ -99,7 +101,7 @@ func prelude(w http.ResponseWriter, r *http.Request, methods []string, chkAuth b
 
 	b, err := io.ReadAll(r.Body)
 	if err != nil {
-		errorBadRequest(w)
+		RErrorBadRequest(w)
 		return nil, ErrorInvalidData
 	}
 
