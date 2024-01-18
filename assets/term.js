@@ -121,7 +121,6 @@ function connectWS() {
           case RESIZE:
             const [cols, rows] = (new TextDecoder().decode(payload)).split(':');
             terminal.resize(+rows, +cols);
-            console.log(`Resized to ${cols}x${rows}`);
             break
           default:
             console.log("not implemented", array);
@@ -142,6 +141,7 @@ function connectWS() {
     terminal.reset();
     terminal.write(`\x1b[2J\x1b[0;0HConnection closed.\r\nReconnecting… ${progress[progressIndex]}\r\n`);
     progressIndex = (progressIndex + 1) % progress.length;
+    document.title = 'compterm';
     setTimeout(connectWS, 1000);
   };
 
