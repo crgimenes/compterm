@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"log"
@@ -19,6 +20,7 @@ import (
 	"github.com/crgimenes/compterm/constants"
 	"github.com/crgimenes/compterm/luaengine"
 	"github.com/crgimenes/compterm/prelude"
+	"github.com/crgimenes/compterm/protocol"
 	"github.com/crgimenes/compterm/screen"
 	"github.com/crgimenes/compterm/session"
 
@@ -161,6 +163,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 
 	///////////////////////////////////////////////
 	defaultScreen.AttachClient(client, false)
+
 	/*
 			// TODO: use the manager to create a new screen
 			// TODO: enable change screen
@@ -176,11 +179,84 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 	*/
 }
 
+////////////////////////////////////////
+
+type wsWriter struct {
+	c *websocket.Conn
+}
+
+func (w wsWriter) Write(p []byte) (n int, err error) {
+	// input from webbrowser / websocket
+	err = w.c.Write(context.Background(), websocket.MessageText, p)
+	if err != nil {
+		log.Println(err)
+		return 0, err
+	}
+	return len(p), nil
+}
+
+func (w wsWriter) LoopWrite() {
+	buf := make([]byte, constants.BufferSize)
+	for {
+		_, data, err := w.c.Read(context.Background())
+		if err != nil {
+			log.Println(err)
+			return
+		}
+
+		cmd, n, _, err := protocol.Decode(buf, data)
+		if err != nil {
+			log.Println(err)
+			return
+		}
+
+		err = defaultScreen.Send(cmd, buf[:n])
+		if err != nil {
+			log.Println(err)
+			return
+		}
+	}
+}
+
+////////////////////////////////////////
+
+func wsproxyHandler(w http.ResponseWriter, r *http.Request) {
+	if !config.CFG.ProxyMode {
+		w.WriteHeader(http.StatusForbidden)
+		w.Write([]byte("proxy mode is disabled"))
+		return
+	}
+
+	sid, sd, ok := sc.Get(r)
+	if !ok {
+		sid, sd = sc.Create()
+	}
+
+	// renew session
+	sc.Save(w, sid, sd)
+
+	////////////////////////////////////////////////
+	// TODO: verify client credentials (api-key to send data to websocket)
+
+	c, err := websocket.Accept(w, r, nil)
+	if err != nil {
+		log.Println(err)
+
+		return
+	}
+
+	// TODO: permit multiple clients send data to websocket
+
+	ws := wsWriter{c: c}
+	defaultScreen.Input = ws
+	ws.LoopWrite()
+}
+
 func serveHTTP() {
 	mux := http.NewServeMux()
 
+	mux.HandleFunc("/wsproxy", wsproxyHandler)
 	mux.HandleFunc("/ws", wsHandler)
-	//mux.Handle("/", http.FileServer(assets.FS))
 	mux.HandleFunc("/", mainHandler)
 
 	s := &http.Server{
@@ -363,12 +439,16 @@ func main() {
 	const cookieName = "compterm"
 	sc = session.New(cookieName)
 
-	//go writeAllWS()
 	go serveAPI()
 	go serveHTTP()
 
 	runtime.Gosched()
 
-	runCmd()
+	if !config.CFG.ProxyMode {
+		runCmd()
+		return
+	}
+
+	<-make(chan struct{})
 
 }
