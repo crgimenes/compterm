@@ -50,6 +50,10 @@ func runCmd() {
 	cmd := strings.Split(cmdAux, " ")
 
 	c := exec.Command(cmd[0], cmd[1:]...)
+
+	c.Env = os.Environ()
+	c.Env = append(c.Env, fmt.Sprintf("COMPTERM=%d", os.Getpid()))
+
 	// Start the command with a pty.
 	mx.Lock()
 	ptmx, err = pty.Start(c)
@@ -390,24 +394,11 @@ func main() {
 
 	// verify if there is a pid file
 	if !config.CFG.IgnorePID {
-		pidFile := config.CFG.Path + "/compterm.pid"
-		_, err = os.Stat(pidFile)
-		if err == nil {
-			b, err := os.ReadFile(pidFile)
-			if err != nil {
-				log.Fatalf("error reading pid file: %s\n", err)
-			}
-			fmt.Printf("There is already a compterm running, pid: %s pid file: %s\n", string(b), pidFile)
+		comptermPID := os.Getenv("COMPTERM")
+		if comptermPID != "" {
+			fmt.Printf("There is already a compterm running, pid: %s\n", comptermPID)
 			os.Exit(1)
 		}
-
-		// create pid file
-		err = os.WriteFile(pidFile, []byte(fmt.Sprintf("%d", os.Getpid())), 0640)
-		if err != nil {
-			log.Fatalf("error writing pid file: %s\n", err)
-		}
-
-		defer os.Remove(pidFile)
 	}
 
 	/////////////////////////////////////////////////

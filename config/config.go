@@ -46,10 +46,13 @@ func Load() error {
 	log.Println("CFG.Path:", CFG.Path)
 
 	// Parse environment variables
-	CFG.Listen = os.Getenv("COMPTERM_LISTEN")
-	if CFG.Listen == "" {
-		CFG.Listen = "0.0.0.0:2200"
+
+	CFG.Listen = "0.0.0.0:2200"
+	v, ok := os.LookupEnv("COMPTERM_LISTEN")
+	if ok {
+		CFG.Listen = v
 	}
+
 	CFG.APIListen = os.Getenv("COMPTERM_API_LISTEN")
 	if CFG.APIListen == "" {
 		CFG.APIListen = "127.0.0.1:2201"
