@@ -77,7 +77,10 @@ func handleTCPClient(conn net.Conn) {
 			continue
 		}
 
-		err = wsConn.Write(context.Background(), websocket.MessageText, data[:n])
+		err = wsConn.Write(
+			context.Background(),
+			websocket.MessageBinary,
+			data[:n])
 		if err != nil {
 			log.Println(err)
 			removeClient(conn)
