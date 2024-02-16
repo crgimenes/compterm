@@ -9,7 +9,6 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
-	"runtime"
 	"strings"
 	"sync"
 	"syscall"
@@ -29,12 +28,14 @@ import (
 	"nhooyr.io/websocket"
 )
 
+const cookieName = "compterm"
+
 var (
 	screenManager    = screen.NewManager()
 	_, defaultScreen = screenManager.GetScreenByID(0)
 	ptmx             *os.File
-	GitTag           string = "0.0.0v"
-	sc               *session.Control
+	GitTag           string           = "0.0.0v"
+	sc               *session.Control = session.New(cookieName)
 	mx               sync.Mutex
 )
 
@@ -427,13 +428,8 @@ func main() {
 
 	updateTerminalSize()
 
-	const cookieName = "compterm"
-	sc = session.New(cookieName)
-
 	go serveAPI()
 	go serveHTTP()
-
-	runtime.Gosched()
 
 	if !config.CFG.ProxyMode {
 		runCmd()
@@ -441,5 +437,4 @@ func main() {
 	}
 
 	<-make(chan struct{})
-
 }
