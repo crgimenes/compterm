@@ -402,7 +402,7 @@ func main() {
 		}
 
 		// create pid file
-		err = os.WriteFile(pidFile, []byte(fmt.Sprintf("%d", os.Getpid())), 0640)
+		err = os.WriteFile(pidFile, []byte(fmt.Sprintf("%d", os.Getpid())), 0600)
 		if err != nil {
 			log.Fatalf("error writing pid file: %s\n", err)
 		}
@@ -412,7 +412,7 @@ func main() {
 
 	/////////////////////////////////////////////////
 	logFile := config.CFG.Path + "/compterm.log"
-	f, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0640)
+	f, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
 	if err != nil {
 		log.Fatalf("error opening log file: %s %s\n", logFile, err)
 	}

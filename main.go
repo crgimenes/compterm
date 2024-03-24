@@ -426,7 +426,7 @@ func main() {
 
 	/////////////////////////////////////////////////
 	logFile := config.CFG.Path + "/compterm.log"
-	f, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0640)
+	f, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
 	if err != nil {
 		log.Fatalf("error opening log file: %s %s\n", logFile, err)
 	}
