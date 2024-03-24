@@ -1,6 +1,7 @@
 BINARY_NAME = compterm
 GIT_TAG = $(shell git describe --tags --always)
 LDFLAGS = -X 'main.GitTag=$(GIT_TAG)' -w -s
+export CGO_ENABLED=0
 
 all: js
 	go build -o $(BINARY_NAME) -ldflags "$(LDFLAGS)" .
