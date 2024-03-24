@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
@@ -364,7 +365,7 @@ func main() {
 	}
 
 	if os.IsNotExist(err) && config.CFG.InitFile == "init.lua" {
-		f, err := os.Create(luaInit)
+		f, err := os.Create(filepath.Clean(luaInit))
 		if err != nil {
 			return
 		}
@@ -393,7 +394,7 @@ func main() {
 		pidFile := config.CFG.Path + "/compterm.pid"
 		_, err = os.Stat(pidFile)
 		if err == nil {
-			b, err := os.ReadFile(pidFile)
+			b, err := os.ReadFile(filepath.Clean(pidFile))
 			if err != nil {
 				log.Fatalf("error reading pid file: %s\n", err)
 			}
@@ -402,7 +403,7 @@ func main() {
 		}
 
 		// create pid file
-		err = os.WriteFile(pidFile, []byte(fmt.Sprintf("%d", os.Getpid())), 0600)
+		err = os.WriteFile(filepath.Clean(pidFile), []byte(fmt.Sprintf("%d", os.Getpid())), 0600)
 		if err != nil {
 			log.Fatalf("error writing pid file: %s\n", err)
 		}
@@ -412,7 +413,7 @@ func main() {
 
 	/////////////////////////////////////////////////
 	logFile := config.CFG.Path + "/compterm.log"
-	f, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
+	f, err := os.OpenFile(filepath.Clean(logFile), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
 	if err != nil {
 		log.Fatalf("error opening log file: %s %s\n", logFile, err)
 	}

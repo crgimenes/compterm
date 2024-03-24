@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"sync"
 	"syscall"
@@ -391,7 +392,7 @@ func main() {
 	}
 
 	if os.IsNotExist(err) && config.CFG.InitFile == "init.lua" {
-		f, err := os.Create(luaInit)
+		f, err := os.Create(filepath.Clean(luaInit))
 		if err != nil {
 			return
 		}
@@ -426,7 +427,7 @@ func main() {
 
 	/////////////////////////////////////////////////
 	logFile := config.CFG.Path + "/compterm.log"
-	f, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
+	f, err := os.OpenFile(filepath.Clean(logFile), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
 	if err != nil {
 		log.Fatalf("error opening log file: %s %s\n", logFile, err)
 	}
