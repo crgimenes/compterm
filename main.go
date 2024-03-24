@@ -296,7 +296,9 @@ func apiHandler(w http.ResponseWriter, r *http.Request) {
 	case "get-connected-clients":
 		// curl -X GET http://localhost:2201/api/action/get-connected-clients
 
-		_, _ = w.Write([]byte(fmt.Sprintf("{clients: %d}\n", len(defaultScreen.Clients))))
+		clients := defaultScreen.ListConnectedClients()
+		_, _ = w.Write([]byte(fmt.Sprintf("{clients: %d}\n", len(clients))))
+		return
 	case "list-connected-clients":
 		// curl -X GET http://localhost:2201/api/action/list-connected-clients
 
@@ -304,11 +306,12 @@ func apiHandler(w http.ResponseWriter, r *http.Request) {
 		j, err := json.MarshalIndent(clients, "", "  ")
 		if err != nil {
 			log.Println(err)
-			w.Write([]byte("error"))
+			w.Write([]byte(fmt.Sprintf("{error: %q}\n", err)))
 			return
 		}
 
 		_, _ = w.Write(j)
+		return
 
 	case "enable-ws-stream":
 		// curl -X GET http://localhost:2201/api/action/enable-ws-stream
@@ -328,7 +331,8 @@ func apiHandler(w http.ResponseWriter, r *http.Request) {
 	case "get-version":
 		// curl -X GET http://localhost:2201/api/action/get-version
 
-		_, _ = w.Write([]byte(GitTag))
+		_, _ = w.Write([]byte(fmt.Sprintf("{version: %q}\n", GitTag)))
+		return
 	default:
 		prelude.RErrorBadRequest(w)
 		return

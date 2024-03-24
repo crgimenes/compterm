@@ -118,3 +118,7 @@ func RandomID() string {
 	}
 	return string(b)
 }
+
+func (c *Control) List() map[string]SessionData {
+	return c.SessionDataMap
+}

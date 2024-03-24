@@ -20,15 +20,15 @@ type ScreenClientProperties struct {
 }
 
 type Screen struct {
-	Title             string
-	columns           int
-	rows              int
-	Clients           []*Client // Attached clients
-	ClientsProperties map[*Client]*ScreenClientProperties
-	Stream            *stream.Stream
-	mt                *mterm.Terminal // terminal emulator
-	Input             io.Writer       // receive input (stdin) from attached clients and other sources
-	mx                sync.Mutex
+	Title             string                              `json:"title"`
+	Columns           int                                 `json:"columns"`
+	Rows              int                                 `json:"rows"`
+	Clients           []*Client                           `json:"-"` // attached clients
+	ClientsProperties map[*Client]*ScreenClientProperties `json:"-"`
+	Stream            *stream.Stream                      `json:"-"`
+	mt                *mterm.Terminal                     `json:"-"` // terminal emulator
+	Input             io.Writer                           `json:"-"` // receive input (stdin) from attached clients and other sources
+	mx                sync.Mutex                          `json:"-"`
 }
 
 type Manager struct {
@@ -36,15 +36,13 @@ type Manager struct {
 }
 
 type Client struct {
-	bs            *stream.Stream
-	conn          *websocket.Conn
-	IP            string
-	Nick          string
-	SessionID     string
-	outbuff       []byte // used to avoid memory allocation on each write
-	mx            sync.Mutex
-	CurrentScreen *Screen
-	done          chan struct{} // used to close the writeLoop goroutine
+	bs            *stream.Stream  `json:"-"`
+	conn          *websocket.Conn `json:"-"`
+	SessionID     string          `json:"session_id"`
+	outbuff       []byte          `json:"-"`
+	mx            sync.Mutex      `json:"-"`
+	CurrentScreen *Screen         `json:"-"`
+	done          chan struct{}   `json:"-"`
 }
 
 func NewManager() *Manager {
@@ -207,8 +205,8 @@ func (m *Manager) GetScreenByTitle(title string) (bool, *Screen) {
 
 func New(rows, columns int) *Screen {
 	s := &Screen{
-		columns:           columns,
-		rows:              rows,
+		Columns:           columns,
+		Rows:              rows,
 		Stream:            stream.New(),
 		mt:                mterm.New(rows, columns),
 		ClientsProperties: make(map[*Client]*ScreenClientProperties),
@@ -293,10 +291,10 @@ func (s *Screen) updateToCurrentState(c *Client) {
 	msg := s.GetScreenAsANSI()
 
 	c.Send(constants.RESIZE,
-		[]byte(fmt.Sprintf("%d:%d", s.rows, s.columns)))
+		[]byte(fmt.Sprintf("%d:%d", s.Rows, s.Columns)))
 
 	m := fmt.Sprintf("\033[8;%d;%dt\033[0;0H%s\033[%d;%dH",
-		s.rows, s.columns, msg, crows+1, ccolumns+1)
+		s.Rows, s.Columns, msg, crows+1, ccolumns+1)
 
 	c.Send(constants.MSG, []byte(m))
 
@@ -331,17 +329,17 @@ func (s *Screen) Send(prefix byte, p []byte) (err error) {
 func (s *Screen) Resize(rows, columns int) {
 	s.mx.Lock()
 	defer s.mx.Unlock()
-	if rows == s.rows && columns == s.columns {
+	if rows == s.Rows && columns == s.Columns {
 		return
 	}
 
-	s.rows = rows
-	s.columns = columns
+	s.Rows = rows
+	s.Columns = columns
 	s.mt.Resize(rows, columns)
 
 	s.Write([]byte(fmt.Sprintf("\033[8;%d;%dt",
-		s.rows,
-		s.columns,
+		s.Rows,
+		s.Columns,
 	)))
 
 	s.Send(constants.RESIZE,
@@ -350,7 +348,7 @@ func (s *Screen) Resize(rows, columns int) {
 
 // Get screen size
 func (s *Screen) Size() (rows, columns int) {
-	return s.rows, s.columns
+	return s.Rows, s.Columns
 }
 
 // GetScreenAsANSI returns the screen as ANSI
@@ -365,14 +363,9 @@ func (s *Screen) CursorPos() (rows, columns int) {
 
 // List of connected clients
 func (s *Screen) ListConnectedClients() []*Client {
-	ac := make([]*Client, 0)
-	for _, c := range s.Clients {
-		c.mx.Lock()
-		if !c.IsClosed() {
-			ac = append(ac, c)
-		}
-		c.mx.Unlock()
-	}
+	s.mx.Lock()
+	ac := s.Clients
+	s.mx.Unlock()
 
 	return ac
 }
