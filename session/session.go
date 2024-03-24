@@ -4,6 +4,8 @@ import (
 	"crypto/rand"
 	"net/http"
 	"time"
+
+	"github.com/crgimenes/compterm/sillyname"
 )
 
 type Control struct {
@@ -14,6 +16,7 @@ type Control struct {
 type SessionData struct {
 	ExpireAt      time.Time
 	CurrentScreen int
+	Nick          string
 }
 
 func New(cookieName string) *Control {
@@ -44,6 +47,10 @@ func (c *Control) Get(r *http.Request) (string, *SessionData, bool) {
 		return "", nil, false
 	}
 
+	if s.Nick == "" {
+		s.Nick = sillyname.Generate()
+	}
+
 	return cookie.Value, &s, true
 }
 
@@ -69,6 +76,11 @@ func (c *Control) Save(w http.ResponseWriter, id string, sessionData *SessionDat
 		SameSite: http.SameSiteDefaultMode,
 	}
 
+	if sessionData == nil {
+		sessionData = &SessionData{}
+	}
+
+	sessionData.Nick = sillyname.Generate()
 	sessionData.ExpireAt = expireAt
 	c.SessionDataMap[id] = *sessionData
 
@@ -77,7 +89,9 @@ func (c *Control) Save(w http.ResponseWriter, id string, sessionData *SessionDat
 
 func (c *Control) Create() (string, *SessionData) {
 	sessionData := &SessionData{
-		ExpireAt: time.Now().Add(3 * time.Hour),
+		CurrentScreen: 0,
+		Nick:          sillyname.Generate(),
+		ExpireAt:      time.Now().Add(3 * time.Hour),
 	}
 
 	return RandomID(), sessionData
