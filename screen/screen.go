@@ -85,7 +85,8 @@ func (s *Screen) AttachClient(c *Client, writePermission bool) error {
 func (s *Screen) DetachClient(c *Client) error {
 	// check if client is attached
 	for i, ac := range s.Clients {
-		if ac == c {
+		if ac == c { // client is attached
+			// remove client
 			s.Clients = append(
 				s.Clients[:i],
 				s.Clients[i+1:]...)
@@ -362,6 +363,20 @@ func (s *Screen) CursorPos() (rows, columns int) {
 	return s.mt.CursorPos()
 }
 
+// List of connected clients
+func (s *Screen) ListConnectedClients() []*Client {
+	ac := make([]*Client, 0)
+	for _, c := range s.Clients {
+		c.mx.Lock()
+		if !c.IsClosed() {
+			ac = append(ac, c)
+		}
+		c.mx.Unlock()
+	}
+
+	return ac
+}
+
 func NewClient(conn *websocket.Conn) *Client {
 	c := &Client{
 		bs:      stream.New(),
@@ -384,6 +399,16 @@ func (c *Client) Close() {
 	default:
 		close(c.done)
 		c.conn.Close(websocket.StatusNormalClosure, "")
+	}
+}
+
+// IsClosed returns true if the client is closed
+func (c *Client) IsClosed() bool {
+	select {
+	case <-c.done:
+		return true
+	default:
+		return false
 	}
 }
 
