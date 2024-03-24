@@ -181,7 +181,7 @@ func main() {
 		<-sigs
 		closeClients()
 		if wsConn != nil {
-			wsConn.Close(websocket.StatusNormalClosure, "")
+			_ = wsConn.Close(websocket.StatusNormalClosure, "")
 		}
 		os.Exit(0)
 	}()

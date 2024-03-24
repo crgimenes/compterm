@@ -53,7 +53,7 @@ func checksum(data []byte) uint32 {
 	hash := getHash()
 	defer putHash(hash)
 	hash.Reset()
-	hash.Write(data)
+	_, _ = hash.Write(data)
 	return hash.Sum32()
 }
 

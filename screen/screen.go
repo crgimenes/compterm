@@ -99,7 +99,7 @@ func (s *Screen) DetachClient(c *Client) error {
 // detach a client from all screens
 func (m *Manager) DetachClientFromAllScreens(c *Client) {
 	for _, s := range m.Screens {
-		s.DetachClient(c)
+		_ = s.DetachClient(c)
 	}
 }
 
@@ -277,10 +277,10 @@ func (s *Screen) Write(p []byte) (n int, err error) {
 	//	return
 	//}
 
-	s.mt.Write(p) // write to mterm buffer
+	_, _ = s.mt.Write(p) // write to mterm buffer
 
 	// write to websocket
-	s.Stream.Write(p)
+	_, _ = s.Stream.Write(p)
 
 	n = len(p)
 	return
@@ -290,13 +290,13 @@ func (s *Screen) updateToCurrentState(c *Client) {
 	crows, ccolumns := s.CursorPos()
 	msg := s.GetScreenAsANSI()
 
-	c.Send(constants.RESIZE,
+	_ = c.Send(constants.RESIZE,
 		[]byte(fmt.Sprintf("%d:%d", s.Rows, s.Columns)))
 
 	m := fmt.Sprintf("\033[8;%d;%dt\033[0;0H%s\033[%d;%dH",
 		s.Rows, s.Columns, msg, crows+1, ccolumns+1)
 
-	c.Send(constants.MSG, []byte(m))
+	_ = c.Send(constants.MSG, []byte(m))
 
 }
 
@@ -337,12 +337,12 @@ func (s *Screen) Resize(rows, columns int) {
 	s.Columns = columns
 	s.mt.Resize(rows, columns)
 
-	s.Write([]byte(fmt.Sprintf("\033[8;%d;%dt",
+	_, _ = s.Write([]byte(fmt.Sprintf("\033[8;%d;%dt",
 		s.Rows,
 		s.Columns,
 	)))
 
-	s.Send(constants.RESIZE,
+	_ = s.Send(constants.RESIZE,
 		[]byte(fmt.Sprintf("%d:%d", rows, columns)))
 }
 
@@ -391,7 +391,7 @@ func (c *Client) Close() {
 		return
 	default:
 		close(c.done)
-		c.conn.Close(websocket.StatusNormalClosure, "")
+		_ = c.conn.Close(websocket.StatusNormalClosure, "")
 	}
 }
 

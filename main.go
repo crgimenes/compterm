@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"sync"
 	"syscall"
@@ -76,7 +77,7 @@ func runCmd() {
 	}
 	defer restoreTerm()
 
-	pty.InheritSize(os.Stdin, ptmx)
+	_ = pty.InheritSize(os.Stdin, ptmx)
 
 	defaultScreen.Input = ptmx // resive input from from user
 
@@ -95,8 +96,8 @@ func runCmd() {
 				log.Fatalf("error reading from pty: %s\r\n", err)
 			}
 			if n > 0 {
-				defaultScreen.Write(buf[:n])
-				os.Stdout.Write(buf[:n])
+				_, _ = defaultScreen.Write(buf[:n])
+				_, _ = os.Stdout.Write(buf[:n])
 			}
 		}
 	}()
@@ -132,7 +133,7 @@ type dummyProvider struct {
 
 func (d dummyProvider) Write(p []byte) (n int, err error) {
 	// input from webbrowser / websocket
-	d.Screen.Write([]byte(fmt.Sprintf("- %s\r\n", string(p))))
+	_, _ = d.Screen.Write([]byte(fmt.Sprintf("- %s\r\n", string(p))))
 	return len(p), nil
 }
 
@@ -140,7 +141,7 @@ func (d dummyProvider) LoopWrite() {
 	// output to webbrowser / websocket
 	for {
 		time.Sleep(1 * time.Second)
-		d.Screen.Write([]byte(fmt.Sprintf("dummyProvider: %s\r\n", time.Now().String())))
+		_, _ = d.Screen.Write([]byte(fmt.Sprintf("dummyProvider: %s\r\n", time.Now().String())))
 	}
 }
 
@@ -168,7 +169,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 	client.SessionID = sid
 
 	///////////////////////////////////////////////
-	defaultScreen.AttachClient(client, false)
+	_ = defaultScreen.AttachClient(client, false)
 
 	/*
 			// TODO: use the manager to create a new screen
@@ -229,7 +230,7 @@ func (w wsWriter) LoopWrite() {
 func wsproxyHandler(w http.ResponseWriter, r *http.Request) {
 	if !config.CFG.ProxyMode {
 		w.WriteHeader(http.StatusForbidden)
-		w.Write([]byte("proxy mode is disabled"))
+		_, _ = w.Write([]byte("proxy mode is disabled"))
 		return
 	}
 
@@ -306,7 +307,7 @@ func apiHandler(w http.ResponseWriter, r *http.Request) {
 		j, err := json.MarshalIndent(clients, "", "  ")
 		if err != nil {
 			log.Println(err)
-			w.Write([]byte(fmt.Sprintf("{error: %q}\n", err)))
+			_, _ = w.Write([]byte(fmt.Sprintf("{error: %q}\n", err)))
 			return
 		}
 
@@ -319,10 +320,10 @@ func apiHandler(w http.ResponseWriter, r *http.Request) {
 		rows, columns := defaultScreen.Size()
 		s := defaultScreen
 
-		s.Send(
+		_ = s.Send(
 			constants.MSG,
 			[]byte(fmt.Sprintf("\033[8;%d;%dt\033[2J\033[0;0H", rows, columns)))
-		s.Send(
+		_ = s.Send(
 			constants.RESIZE,
 			[]byte(fmt.Sprintf("%d:%d", rows, columns)))
 	case "disable-ws-stream":
@@ -391,7 +392,7 @@ func main() {
 	}
 
 	if os.IsNotExist(err) && config.CFG.InitFile == "init.lua" {
-		f, err := os.Create(luaInit)
+		f, err := os.Create(filepath.Clean(luaInit))
 		if err != nil {
 			return
 		}
@@ -405,7 +406,7 @@ func main() {
 			log.Printf("error writing init.lua: %s\r\n", err)
 			return
 		}
-		f.Close()
+		_ = f.Close()
 	}
 
 	err = luaengine.Startup(luaInit)
@@ -426,7 +427,7 @@ func main() {
 
 	/////////////////////////////////////////////////
 	logFile := config.CFG.Path + "/compterm.log"
-	f, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0640)
+	f, err := os.OpenFile(filepath.Clean(logFile), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
 	if err != nil {
 		log.Fatalf("error opening log file: %s %s\n", logFile, err)
 	}
