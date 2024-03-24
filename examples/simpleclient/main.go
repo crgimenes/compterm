@@ -36,7 +36,7 @@ func main() {
 		}
 
 		if cmd == constants.MSG {
-			os.Stdout.Write(data[:n])
+			_, _ = os.Stdout.Write(data[:n])
 		}
 	}
 }

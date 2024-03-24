@@ -21,27 +21,27 @@ var (
 
 func RErrorMethodNotAllowed(w http.ResponseWriter) {
 	w.WriteHeader(http.StatusMethodNotAllowed)
-	w.Write([]byte(`{"error": "method not allowed"}`))
+	_, _ = w.Write([]byte(`{"error": "method not allowed"}`))
 }
 
 func RErrorBadRequest(w http.ResponseWriter) {
 	w.WriteHeader(http.StatusBadRequest)
-	w.Write([]byte(`{"error": "bad request"}`))
+	_, _ = w.Write([]byte(`{"error": "bad request"}`))
 }
 
 func RErrorInternalServer(w http.ResponseWriter) {
 	w.WriteHeader(http.StatusInternalServerError)
-	w.Write([]byte(`{"error": "internal server error"}`))
+	_, _ = w.Write([]byte(`{"error": "internal server error"}`))
 }
 
 func RErrorUnauthorized(w http.ResponseWriter) {
 	w.WriteHeader(http.StatusUnauthorized)
-	w.Write([]byte(`{"error": "unauthorized"}`))
+	_, _ = w.Write([]byte(`{"error": "unauthorized"}`))
 }
 
 func RErrorNotFound(w http.ResponseWriter) {
 	w.WriteHeader(http.StatusNotFound)
-	w.Write([]byte(`{"error": "not found"}`))
+	_, _ = w.Write([]byte(`{"error": "not found"}`))
 }
 
 type RequestData struct {

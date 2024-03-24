@@ -86,7 +86,7 @@ func main() {
 			}
 		case constants.RESIZE:
 			var c, l int
-			fmt.Sscanf(string(data), "%d:%d", &c, &l)
+			_, _ = fmt.Sscanf(string(data), "%d:%d", &c, &l)
 			t.Resize(c, l)
 		// resize
 		default:
@@ -94,5 +94,5 @@ func main() {
 		}
 	}
 
-	c.Close(websocket.StatusNormalClosure, "")
+	_ = c.Close(websocket.StatusNormalClosure, "")
 }

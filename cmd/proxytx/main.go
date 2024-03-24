@@ -95,7 +95,7 @@ func runCmd() {
 	}
 	defer restoreTerm()
 
-	pty.InheritSize(os.Stdin, ptmx)
+	_ = pty.InheritSize(os.Stdin, ptmx)
 
 	//defaultScreen.Input = ptmx // resive input from from user
 
@@ -116,13 +116,13 @@ func runCmd() {
 				log.Fatalf("error reading from pty: %s\r\n", err)
 			}
 			if n > 0 {
-				os.Stdout.Write(buf[:n])
+				_, _ = os.Stdout.Write(buf[:n])
 				n, err := protocol.Encode(encodedBuf, buf[:n], 01, 0)
 				if err != nil {
 					log.Fatalf("error encoding data: %s\r\n", err)
 				}
 
-				ws.Write(encodedBuf[:n])
+				_, _ = ws.Write(encodedBuf[:n])
 
 			}
 		}
@@ -157,7 +157,7 @@ func updateTerminalSize() {
 	if err != nil {
 		log.Fatalf("error encoding data: %s\r\n", err)
 	}
-	ws.Write(encodedBuf[:n])
+	_, _ = ws.Write(encodedBuf[:n])
 
 	///////////////////////////////////
 
@@ -169,7 +169,7 @@ func updateTerminalSize() {
 	if err != nil {
 		log.Fatalf("error encoding data: %s\r\n", err)
 	}
-	ws.Write(encodedBuf[:n])
+	_, _ = ws.Write(encodedBuf[:n])
 
 }
 
