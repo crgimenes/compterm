@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -292,6 +293,23 @@ func apiHandler(w http.ResponseWriter, r *http.Request) {
 
 	cmd := parameters[0]
 	switch cmd {
+	case "get-connected-clients":
+		// curl -X GET http://localhost:2201/api/action/get-connected-clients
+
+		_, _ = w.Write([]byte(fmt.Sprintf("{clients: %d}\n", len(defaultScreen.Clients))))
+	case "list-connected-clients":
+		// curl -X GET http://localhost:2201/api/action/list-connected-clients
+
+		clients := defaultScreen.ListConnectedClients()
+		j, err := json.MarshalIndent(clients, "", "  ")
+		if err != nil {
+			log.Println(err)
+			w.Write([]byte("error"))
+			return
+		}
+
+		_, _ = w.Write(j)
+
 	case "enable-ws-stream":
 		// curl -X GET http://localhost:2201/api/action/enable-ws-stream
 
