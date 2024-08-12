@@ -9,4 +9,4 @@ require (
 	nhooyr.io/websocket v1.8.17
 )
 
-require golang.org/x/sys v0.23.0 // indirect
+require golang.org/x/sys v0.24.0 // indirect
