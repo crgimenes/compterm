@@ -8,11 +8,12 @@ import (
 	"sync"
 	"time"
 
+	"github.com/coder/websocket"
+
 	"github.com/crgimenes/compterm/constants"
 	"github.com/crgimenes/compterm/mterm"
 	"github.com/crgimenes/compterm/protocol"
 	"github.com/crgimenes/compterm/stream"
-	"nhooyr.io/websocket"
 )
 
 type ScreenClientProperties struct {
