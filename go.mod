@@ -4,7 +4,7 @@ go 1.23
 
 require (
 	github.com/coder/websocket v1.8.12
-	github.com/creack/pty v1.1.23
+	github.com/creack/pty v1.1.24
 	github.com/yuin/gopher-lua v1.1.1
 	golang.org/x/term v0.25.0
 	nhooyr.io/websocket v1.8.17
