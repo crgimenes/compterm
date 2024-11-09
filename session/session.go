@@ -3,6 +3,7 @@ package session
 import (
 	"crypto/rand"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/crgimenes/compterm/sillyname"
@@ -64,14 +65,22 @@ func (c *Control) Delete(w http.ResponseWriter, id string) {
 	http.SetCookie(w, &cookie)
 }
 
-func (c *Control) Save(w http.ResponseWriter, id string, sessionData *SessionData) {
+func (c *Control) Save(w http.ResponseWriter, r *http.Request, id string, sessionData *SessionData) {
 	expireAt := time.Now().Add(3 * time.Hour)
+
+	// if localhost accept all cookies (secure=false)
+	var secure bool = true
+	lhost := strings.Split(r.Host, ":")[0]
+	if lhost == "localhost" {
+		secure = false
+	}
+
 	cookie := &http.Cookie{
 		Path:     "/",
 		Name:     c.cookieName,
 		Value:    id,
 		Expires:  expireAt,
-		Secure:   true,
+		Secure:   secure,
 		HttpOnly: true,
 		SameSite: http.SameSiteDefaultMode,
 	}
@@ -80,7 +89,6 @@ func (c *Control) Save(w http.ResponseWriter, id string, sessionData *SessionDat
 		sessionData = &SessionData{}
 	}
 
-	sessionData.Nick = sillyname.Generate()
 	sessionData.ExpireAt = expireAt
 	c.SessionDataMap[id] = *sessionData
 
