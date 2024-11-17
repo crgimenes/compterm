@@ -117,7 +117,7 @@ func mainHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// renew session
-	sc.Save(w, sid, sd)
+	sc.Save(w, r, sid, sd)
 
 	///////////////////////////////////////////////
 
@@ -154,7 +154,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// renew session
-	sc.Save(w, sid, sd)
+	sc.Save(w, r, sid, sd)
 
 	////////////////////////////////////////////////
 
@@ -240,7 +240,7 @@ func wsproxyHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// renew session
-	sc.Save(w, sid, sd)
+	sc.Save(w, r, sid, sd)
 
 	////////////////////////////////////////////////
 	// TODO: verify client credentials (api-key to send data to websocket)
