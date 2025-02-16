@@ -4,7 +4,7 @@ LDFLAGS = -X 'main.GitTag=$(GIT_TAG)' -w -s
 export CGO_ENABLED=0
 
 all: js
-	go build -o $(BINARY_NAME) -ldflags "$(LDFLAGS)" .
+	go build -trimpath -o $(BINARY_NAME) -ldflags "$(LDFLAGS)" .
 
 dev-race: js-dev
 	go run -race -tags dev .
@@ -27,7 +27,7 @@ js-clean:
 
 
 intel:
-	GOOS=linux GOARCH=amd64 go build -o $(BINARY_NAME) -ldflags "$(LDFLAGS)" .
+	GOOS=linux GOARCH=amd64 go build -trimpath -o $(BINARY_NAME) -ldflags "$(LDFLAGS)" .
 
 clean: js-clean
 	go clean
