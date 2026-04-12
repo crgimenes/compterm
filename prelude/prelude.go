@@ -4,6 +4,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/crgimenes/compterm/config"
@@ -76,13 +77,7 @@ func Prepare(w http.ResponseWriter, r *http.Request, methods []string, chkAuth b
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("X-API-Version", GitTag)
 
-	methodAllowed := false
-	for _, m := range methods {
-		if r.Method == m {
-			methodAllowed = true
-			break
-		}
-	}
+	methodAllowed := slices.Contains(methods, r.Method)
 
 	if chkAuth {
 		key := r.Header.Get("X-API-Key")

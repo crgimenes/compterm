@@ -121,7 +121,7 @@ func RandomID() string {
 	lenCharset := byte(len(charset))
 	b := make([]byte, length)
 	_, _ = rand.Read(b)
-	for i := 0; i < length; i++ {
+	for i := range length {
 		b[i] = charset[b[i]%lenCharset]
 	}
 	return string(b)

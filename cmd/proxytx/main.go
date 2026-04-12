@@ -151,7 +151,7 @@ func updateTerminalSize() {
 	encodedBuf := make([]byte, constants.BufferSize)
 	n, err := protocol.Encode(
 		encodedBuf,
-		[]byte(fmt.Sprintf("\033[8;%d;%dt", rows, columns)),
+		fmt.Appendf(nil, "\033[8;%d;%dt", rows, columns),
 		constants.MSG,
 		0)
 	if err != nil {
@@ -163,7 +163,7 @@ func updateTerminalSize() {
 
 	n, err = protocol.Encode(
 		encodedBuf,
-		[]byte(fmt.Sprintf("%d:%d", rows, columns)),
+		fmt.Appendf(nil, "%d:%d", rows, columns),
 		constants.RESIZE,
 		0)
 	if err != nil {

@@ -133,7 +133,7 @@ type dummyProvider struct {
 
 func (d dummyProvider) Write(p []byte) (n int, err error) {
 	// input from webbrowser / websocket
-	_, _ = d.Screen.Write([]byte(fmt.Sprintf("- %s\r\n", string(p))))
+	_, _ = d.Screen.Write(fmt.Appendf(nil, "- %s\r\n", string(p)))
 	return len(p), nil
 }
 
@@ -141,7 +141,7 @@ func (d dummyProvider) LoopWrite() {
 	// output to webbrowser / websocket
 	for {
 		time.Sleep(1 * time.Second)
-		_, _ = d.Screen.Write([]byte(fmt.Sprintf("dummyProvider: %s\r\n", time.Now().String())))
+		_, _ = d.Screen.Write(fmt.Appendf(nil, "dummyProvider: %s\r\n", time.Now().String()))
 	}
 }
 
@@ -298,7 +298,7 @@ func apiHandler(w http.ResponseWriter, r *http.Request) {
 		// curl -X GET http://localhost:2201/api/action/get-connected-clients
 
 		clients := defaultScreen.ListConnectedClients()
-		_, _ = w.Write([]byte(fmt.Sprintf("{clients: %d}\n", len(clients))))
+		_, _ = w.Write(fmt.Appendf(nil, "{clients: %d}\n", len(clients)))
 		return
 	case "list-connected-clients":
 		// curl -X GET http://localhost:2201/api/action/list-connected-clients
@@ -307,7 +307,7 @@ func apiHandler(w http.ResponseWriter, r *http.Request) {
 		j, err := json.MarshalIndent(clients, "", "  ")
 		if err != nil {
 			log.Println(err)
-			_, _ = w.Write([]byte(fmt.Sprintf("{error: %q}\n", err)))
+			_, _ = w.Write(fmt.Appendf(nil, "{error: %q}\n", err))
 			return
 		}
 
@@ -322,17 +322,17 @@ func apiHandler(w http.ResponseWriter, r *http.Request) {
 
 		_ = s.Send(
 			constants.MSG,
-			[]byte(fmt.Sprintf("\033[8;%d;%dt\033[2J\033[0;0H", rows, columns)))
+			fmt.Appendf(nil, "\033[8;%d;%dt\033[2J\033[0;0H", rows, columns))
 		_ = s.Send(
 			constants.RESIZE,
-			[]byte(fmt.Sprintf("%d:%d", rows, columns)))
+			fmt.Appendf(nil, "%d:%d", rows, columns))
 	case "disable-ws-stream":
 		// curl -X GET http://localhost:2201/api/action/disable-ws-stream
 
 	case "get-version":
 		// curl -X GET http://localhost:2201/api/action/get-version
 
-		_, _ = w.Write([]byte(fmt.Sprintf("{version: %q}\n", GitTag)))
+		_, _ = w.Write(fmt.Appendf(nil, "{version: %q}\n", GitTag))
 		return
 	default:
 		prelude.RErrorBadRequest(w)

@@ -292,7 +292,7 @@ func (s *Screen) updateToCurrentState(c *Client) {
 	msg := s.GetScreenAsANSI()
 
 	_ = c.Send(constants.RESIZE,
-		[]byte(fmt.Sprintf("%d:%d", s.Rows, s.Columns)))
+		fmt.Appendf(nil, "%d:%d", s.Rows, s.Columns))
 
 	m := fmt.Sprintf("\033[8;%d;%dt\033[0;0H%s\033[%d;%dH",
 		s.Rows, s.Columns, msg, crows+1, ccolumns+1)
@@ -338,13 +338,13 @@ func (s *Screen) Resize(rows, columns int) {
 	s.Columns = columns
 	s.mt.Resize(rows, columns)
 
-	_, _ = s.Write([]byte(fmt.Sprintf("\033[8;%d;%dt",
+	_, _ = s.Write(fmt.Appendf(nil, "\033[8;%d;%dt",
 		s.Rows,
 		s.Columns,
-	)))
+	))
 
 	_ = s.Send(constants.RESIZE,
-		[]byte(fmt.Sprintf("%d:%d", rows, columns)))
+		fmt.Appendf(nil, "%d:%d", rows, columns))
 }
 
 // Get screen size

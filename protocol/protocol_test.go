@@ -160,7 +160,7 @@ func randonPayload(n int) string {
 
 func TestEncodeDecodeLoop(t *testing.T) {
 	data := make([]byte, constants.BufferSize)
-	for i := 0; i < 1000; i++ {
+	for i := range 1000 {
 		in := []byte(randonPayload(rand.Intn(10 + i)))
 		out := make([]byte, MaxPackageSize)
 

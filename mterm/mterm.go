@@ -737,10 +737,7 @@ func (t *Terminal) getScreenAsAnsi(cursor bool) []byte {
 			}
 			fmt.Fprintf(buf, "m")
 		}
-		r := c.Char
-		if r < ' ' {
-			r = ' '
-		}
+		r := max(c.Char, ' ')
 
 		if cursor && x == s.cursor[1] && y == s.cursor[0] {
 			fmt.Fprintf(buf, "\033[7m%c\033[27m", r)

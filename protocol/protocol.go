@@ -32,7 +32,7 @@ var (
 
 	// hashPool is a pool of hash.Hash32 objects.
 	hashPool = sync.Pool{
-		New: func() interface{} {
+		New: func() any {
 			return fnv.New32a()
 		},
 	}
