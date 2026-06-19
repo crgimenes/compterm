@@ -23,6 +23,7 @@ type SessionData struct {
 	ExpireAt      time.Time
 	CurrentScreen int
 	Nick          string
+	Authenticated bool
 }
 
 func New(cookieName string) *Control {

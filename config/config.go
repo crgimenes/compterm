@@ -23,6 +23,7 @@ type Config struct {
 	Command   string
 	MOTD      string
 	APIKey    string
+	AuthToken string
 	Path      string
 	InitFile  string
 }
@@ -51,6 +52,7 @@ const defaultInitFilo = `;; init.filo — compterm configuration
 ;; (set Listen "0.0.0.0:2200")      ; web/websocket listen address
 ;; (set APIListen "127.0.0.1:2201") ; local control API listen address
 ;; (set APIKey "")                  ; control API key (empty disables the API)
+;; (set AuthToken "")               ; viewer access token (empty disables auth)
 ;; (set Command "/bin/zsh")         ; command to share (defaults to $SHELL)
 ;; (set MOTD "Welcome to Compterm") ; message of the day
 ;; (set Debug #f)                   ; enable debug mode
@@ -92,6 +94,7 @@ func applyDefaultsAndEnv(c *Config) error {
 	c.Listen = envOr("COMPTERM_LISTEN", defaultListen)
 	c.APIListen = envOr("COMPTERM_API_LISTEN", defaultAPIListen)
 	c.APIKey = os.Getenv("COMPTERM_API_KEY")
+	c.AuthToken = os.Getenv("COMPTERM_AUTH_TOKEN")
 	c.MOTD = envOr("COMPTERM_MOTD", defaultMOTD)
 	c.Command = envOr("COMPTERM_COMMAND", os.Getenv("SHELL"))
 	c.Path = envOr("COMPTERM_PATH", defaultPath)
@@ -107,6 +110,7 @@ func parseFlags(c *Config) {
 	flag.StringVar(&c.Listen, "listen", c.Listen, "web/websocket listen address")
 	flag.StringVar(&c.APIListen, "api_listen", c.APIListen, "control API listen address")
 	flag.StringVar(&c.APIKey, "api_key", c.APIKey, "control API key (empty disables the API)")
+	flag.StringVar(&c.AuthToken, "auth_token", c.AuthToken, "viewer access token (empty disables authentication)")
 	flag.StringVar(&c.Command, "command", c.Command, "command to share (defaults to $SHELL)")
 	flag.StringVar(&c.MOTD, "motd", c.MOTD, "message of the day")
 	flag.StringVar(&c.Path, "path", c.Path, "path to configuration files")
@@ -143,6 +147,7 @@ func loadFilo(c *Config) error {
 	f.SetGlobal("Listen", c.Listen)
 	f.SetGlobal("APIListen", c.APIListen)
 	f.SetGlobal("APIKey", c.APIKey)
+	f.SetGlobal("AuthToken", c.AuthToken)
 	f.SetGlobal("Command", c.Command)
 	f.SetGlobal("MOTD", c.MOTD)
 	f.SetGlobal("Debug", c.Debug)
@@ -166,6 +171,7 @@ func loadFilo(c *Config) error {
 	c.Listen = filoString(f, "Listen", c.Listen)
 	c.APIListen = filoString(f, "APIListen", c.APIListen)
 	c.APIKey = filoString(f, "APIKey", c.APIKey)
+	c.AuthToken = filoString(f, "AuthToken", c.AuthToken)
 	c.Command = filoString(f, "Command", c.Command)
 	c.MOTD = filoString(f, "MOTD", c.MOTD)
 	c.Debug = filoBool(f, "Debug", c.Debug)
@@ -294,9 +300,9 @@ func usage() {
 	p("Options:\n")
 	flag.PrintDefaults()
 	p("\nEnvironment variables (override defaults, overridden by flags and the config file):\n")
-	p("    COMPTERM_LISTEN, COMPTERM_API_LISTEN, COMPTERM_API_KEY, COMPTERM_COMMAND,\n")
-	p("    COMPTERM_MOTD, COMPTERM_PATH, COMPTERM_INIT_FILE, COMPTERM_DEBUG,\n")
-	p("    COMPTERM_IGNORE_PID, COMPTERM_PROXY_MODE\n")
+	p("    COMPTERM_LISTEN, COMPTERM_API_LISTEN, COMPTERM_API_KEY, COMPTERM_AUTH_TOKEN,\n")
+	p("    COMPTERM_COMMAND, COMPTERM_MOTD, COMPTERM_PATH, COMPTERM_INIT_FILE,\n")
+	p("    COMPTERM_DEBUG, COMPTERM_IGNORE_PID, COMPTERM_PROXY_MODE\n")
 	p("\nConfiguration file (Filo):\n")
 	p("    Looked up at ./init.filo, then $COMPTERM_PATH/init.filo.\n")
 	p("    Overrides every other setting except -path and -init.\n")

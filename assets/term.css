@@ -1,4 +1,4 @@
-@import "https://unpkg.com/xterm/css/xterm.css";
+@import "xterm.css";
 
 @font-face {
     font-family: terminal;

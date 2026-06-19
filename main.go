@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"fmt"
+	"html"
 	"io"
 	"log"
 	"net/http"
@@ -109,19 +111,119 @@ func runCmd() {
 	}
 }
 
+// authorize reports whether a connection is allowed. An empty requiredToken
+// disables authentication entirely.
+func authorize(requiredToken, providedToken string, sessionAuthed bool) bool {
+	if requiredToken == "" {
+		return true
+	}
+	if sessionAuthed {
+		return true
+	}
+	return providedToken != "" &&
+		subtle.ConstantTimeCompare([]byte(providedToken), []byte(requiredToken)) == 1
+}
+
+// tokenFromRequest extracts an access token from the query string or header,
+// supporting shared links and non-browser clients.
+func tokenFromRequest(r *http.Request) string {
+	if t := r.URL.Query().Get("token"); t != "" {
+		return t
+	}
+	return r.Header.Get("X-Auth-Token")
+}
+
+func isAuthorized(r *http.Request, sd *session.SessionData) bool {
+	return authorize(config.CFG.AuthToken, tokenFromRequest(r), sd != nil && sd.Authenticated)
+}
+
+// loginPageFmt is a self-contained login page; %s is an optional error block.
+const loginPageFmt = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>compterm — login</title>
+<style>
+  html,body{height:100%%;margin:0;background:#000;color:#d4d4d4;font-family:monospace}
+  form{position:absolute;top:50%%;left:50%%;transform:translate(-50%%,-50%%);
+    display:flex;flex-direction:column;gap:.75rem;min-width:16rem}
+  h1{margin:0 0 .5rem;font-size:1.25rem;text-align:center}
+  input,button{padding:.6rem;font:inherit;border:1px solid #444;background:#111;
+    color:#d4d4d4;border-radius:4px}
+  button{cursor:pointer;background:#1b3a1b;border-color:#2d5a2d}
+  .error{margin:0;color:#ff6d67;text-align:center}
+</style>
+</head>
+<body>
+<form method="post" action="login">
+<h1>compterm</h1>
+%s<input type="password" name="token" placeholder="Access token" autofocus
+  autocomplete="current-password">
+<button type="submit">Enter</button>
+</form>
+</body>
+</html>
+`
+
+func serveLogin(w http.ResponseWriter, status int, errMsg string) {
+	errBlock := ""
+	if errMsg != "" {
+		errBlock = `<p class="error">` + html.EscapeString(errMsg) + "</p>\n"
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(status)
+	_, _ = fmt.Fprintf(w, loginPageFmt, errBlock)
+}
+
+func loginHandler(w http.ResponseWriter, r *http.Request) {
+	// nothing to log into when authentication is disabled
+	if config.CFG.AuthToken == "" {
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+
+	sid, sd, ok := sc.Get(r)
+	if !ok {
+		sid, sd = sc.Create()
+	}
+
+	if r.Method != http.MethodPost {
+		sc.Save(w, r, sid, sd)
+		serveLogin(w, http.StatusOK, "")
+		return
+	}
+
+	if authorize(config.CFG.AuthToken, r.PostFormValue("token"), false) {
+		sd.Authenticated = true
+		sc.Save(w, r, sid, sd)
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+
+	sc.Save(w, r, sid, sd)
+	serveLogin(w, http.StatusUnauthorized, "Invalid token.")
+}
+
 func mainHandler(w http.ResponseWriter, r *http.Request) {
 	sid, sd, ok := sc.Get(r)
 	if !ok {
 		sid, sd = sc.Create()
 	}
 
-	// renew session
+	// a valid token in the URL (a shared link) authenticates the session
+	if config.CFG.AuthToken != "" && !sd.Authenticated && isAuthorized(r, sd) {
+		sd.Authenticated = true
+	}
+
 	sc.Save(w, r, sid, sd)
 
-	///////////////////////////////////////////////
+	if config.CFG.AuthToken != "" && !sd.Authenticated {
+		serveLogin(w, http.StatusOK, "")
+		return
+	}
 
 	http.FileServer(assets.FS).ServeHTTP(w, r)
-
 }
 
 ///////////////////////////////////////////////
@@ -155,7 +257,10 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 	// renew session
 	sc.Save(w, r, sid, sd)
 
-	////////////////////////////////////////////////
+	if !isAuthorized(r, sd) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
 
 	c, err := websocket.Accept(w, r, nil)
 	if err != nil {
@@ -241,8 +346,10 @@ func wsproxyHandler(w http.ResponseWriter, r *http.Request) {
 	// renew session
 	sc.Save(w, r, sid, sd)
 
-	////////////////////////////////////////////////
-	// TODO: verify client credentials (api-key to send data to websocket)
+	if !isAuthorized(r, sd) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
 
 	c, err := websocket.Accept(w, r, nil)
 	if err != nil {
@@ -258,15 +365,18 @@ func wsproxyHandler(w http.ResponseWriter, r *http.Request) {
 	ws.LoopWrite()
 }
 
-func serveHTTP() {
+func newMux() *http.ServeMux {
 	mux := http.NewServeMux()
-
 	mux.HandleFunc("/wsproxy", wsproxyHandler)
 	mux.HandleFunc("/ws", wsHandler)
+	mux.HandleFunc("/login", loginHandler)
 	mux.HandleFunc("/", mainHandler)
+	return mux
+}
 
+func serveHTTP() {
 	s := &http.Server{
-		Handler:        mux,
+		Handler:        newMux(),
 		Addr:           config.CFG.Listen,
 		ReadTimeout:    5 * time.Second,
 		WriteTimeout:   5 * time.Second,
