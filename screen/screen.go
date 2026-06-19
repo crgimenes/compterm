@@ -47,7 +47,7 @@ type Client struct {
 }
 
 func NewManager() *Manager {
-	s := New(80, 25)
+	s := New(25, 80) // rows, columns
 	s.Title = "default"
 
 	return &Manager{
@@ -144,7 +144,7 @@ func (c *Client) HandleInput() {
 				continue
 			}
 
-			// TODO: parse input and send to lua
+			// TODO: parse input and send to the Filo scripting engine
 
 			ac := c.CurrentScreen.ClientsProperties[c]
 

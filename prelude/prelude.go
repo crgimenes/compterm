@@ -1,6 +1,7 @@
 package prelude
 
 import (
+	"crypto/subtle"
 	"errors"
 	"io"
 	"net/http"
@@ -80,8 +81,14 @@ func Prepare(w http.ResponseWriter, r *http.Request, methods []string, chkAuth b
 	methodAllowed := slices.Contains(methods, r.Method)
 
 	if chkAuth {
+		// An empty key disables the API entirely instead of accepting an
+		// empty header.
+		if config.CFG.APIKey == "" {
+			RErrorUnauthorized(w)
+			return nil, ErrorUnauthorized
+		}
 		key := r.Header.Get("X-API-Key")
-		if key != config.CFG.APIKey {
+		if subtle.ConstantTimeCompare([]byte(key), []byte(config.CFG.APIKey)) != 1 {
 			RErrorUnauthorized(w)
 			return nil, ErrorUnauthorized
 		}

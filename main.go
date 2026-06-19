@@ -19,7 +19,6 @@ import (
 	"github.com/crgimenes/compterm/assets"
 	"github.com/crgimenes/compterm/config"
 	"github.com/crgimenes/compterm/constants"
-	"github.com/crgimenes/compterm/luaengine"
 	"github.com/crgimenes/compterm/prelude"
 	"github.com/crgimenes/compterm/protocol"
 	"github.com/crgimenes/compterm/screen"
@@ -379,43 +378,6 @@ func main() {
 		log.Fatalf("error loading config: %s\n", err)
 	}
 
-	/////////////////////////////////////////////////
-
-	// read file init.lua from assets
-
-	luaInit := config.CFG.Path + "/" + config.CFG.InitFile
-
-	_, err = os.Stat(luaInit)
-	if err != nil && !os.IsNotExist(err) {
-		log.Printf("error reading %q : %s\r\n", luaInit, err)
-		return
-	}
-
-	if os.IsNotExist(err) && config.CFG.InitFile == "init.lua" {
-		f, err := os.Create(filepath.Clean(luaInit))
-		if err != nil {
-			return
-		}
-		finit, err := assets.FS.Open("init.lua")
-		if err != nil {
-			log.Printf("error reading init.lua from assets: %s\r\n", err)
-			return
-		}
-		_, err = io.Copy(f, finit)
-		if err != nil {
-			log.Printf("error writing init.lua: %s\r\n", err)
-			return
-		}
-		_ = f.Close()
-	}
-
-	err = luaengine.Startup(luaInit)
-	if err != nil {
-		return
-	}
-
-	/////////////////////////////////////////////////
-
 	// verify if there is a pid file
 	if !config.CFG.IgnorePID {
 		comptermPID := os.Getenv("COMPTERM")
@@ -450,6 +412,15 @@ func main() {
 	ch <- syscall.SIGWINCH // Initial resize.
 
 	updateTerminalSize()
+
+	// expire idle sessions periodically
+	go func() {
+		ticker := time.NewTicker(10 * time.Minute)
+		defer ticker.Stop()
+		for range ticker.C {
+			sc.RemoveExpired()
+		}
+	}()
 
 	go serveAPI()
 	go serveHTTP()

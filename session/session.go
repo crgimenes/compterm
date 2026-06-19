@@ -2,15 +2,20 @@ package session
 
 import (
 	"crypto/rand"
+	"maps"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/crgimenes/compterm/sillyname"
 )
 
+const sessionTTL = 3 * time.Hour
+
 type Control struct {
 	cookieName     string
+	mx             sync.Mutex
 	SessionDataMap map[string]SessionData
 }
 
@@ -27,24 +32,32 @@ func New(cookieName string) *Control {
 	}
 }
 
-func (c *Control) Get(r *http.Request) (string, *SessionData, bool) {
-	cookies := r.Cookies()
-	if len(cookies) == 0 {
-		return "", nil, false
+// lookup returns a copy of the session data for key, dropping it if expired.
+func (c *Control) lookup(key string) (SessionData, bool) {
+	c.mx.Lock()
+	defer c.mx.Unlock()
+
+	s, ok := c.SessionDataMap[key]
+	if !ok {
+		return SessionData{}, false
 	}
 
+	if s.ExpireAt.Before(time.Now()) {
+		delete(c.SessionDataMap, key)
+		return SessionData{}, false
+	}
+
+	return s, true
+}
+
+func (c *Control) Get(r *http.Request) (string, *SessionData, bool) {
 	cookie, err := r.Cookie(c.cookieName)
 	if err != nil {
 		return "", nil, false
 	}
 
-	s, ok := c.SessionDataMap[cookie.Value]
+	s, ok := c.lookup(cookie.Value)
 	if !ok {
-		return "", nil, false
-	}
-
-	if s.ExpireAt.Before(time.Now()) {
-		delete(c.SessionDataMap, cookie.Value)
 		return "", nil, false
 	}
 
@@ -56,7 +69,10 @@ func (c *Control) Get(r *http.Request) (string, *SessionData, bool) {
 }
 
 func (c *Control) Delete(w http.ResponseWriter, id string) {
+	c.mx.Lock()
 	delete(c.SessionDataMap, id)
+	c.mx.Unlock()
+
 	cookie := http.Cookie{
 		Name:   c.cookieName,
 		Value:  "",
@@ -66,10 +82,10 @@ func (c *Control) Delete(w http.ResponseWriter, id string) {
 }
 
 func (c *Control) Save(w http.ResponseWriter, r *http.Request, id string, sessionData *SessionData) {
-	expireAt := time.Now().Add(3 * time.Hour)
+	expireAt := time.Now().Add(sessionTTL)
 
 	// if localhost accept all cookies (secure=false)
-	var secure bool = true
+	secure := true
 	lhost := strings.Split(r.Host, ":")[0]
 	if lhost == "localhost" {
 		secure = false
@@ -88,9 +104,11 @@ func (c *Control) Save(w http.ResponseWriter, r *http.Request, id string, sessio
 	if sessionData == nil {
 		sessionData = &SessionData{}
 	}
-
 	sessionData.ExpireAt = expireAt
+
+	c.mx.Lock()
 	c.SessionDataMap[id] = *sessionData
+	c.mx.Unlock()
 
 	http.SetCookie(w, cookie)
 }
@@ -99,15 +117,19 @@ func (c *Control) Create() (string, *SessionData) {
 	sessionData := &SessionData{
 		CurrentScreen: 0,
 		Nick:          sillyname.Generate(),
-		ExpireAt:      time.Now().Add(3 * time.Hour),
+		ExpireAt:      time.Now().Add(sessionTTL),
 	}
 
 	return RandomID(), sessionData
 }
 
 func (c *Control) RemoveExpired() {
+	c.mx.Lock()
+	defer c.mx.Unlock()
+
+	now := time.Now()
 	for k, v := range c.SessionDataMap {
-		if v.ExpireAt.Before(time.Now()) {
+		if v.ExpireAt.Before(now) {
 			delete(c.SessionDataMap, k)
 		}
 	}
@@ -128,5 +150,8 @@ func RandomID() string {
 }
 
 func (c *Control) List() map[string]SessionData {
-	return c.SessionDataMap
+	c.mx.Lock()
+	defer c.mx.Unlock()
+
+	return maps.Clone(c.SessionDataMap)
 }

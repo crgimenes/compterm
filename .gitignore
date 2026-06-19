@@ -2,4 +2,6 @@
 assets/*.min.js*
 node_modules/
 *.log
+CLAUDE.md
+AGENTS.md
 
