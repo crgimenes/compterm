@@ -7,8 +7,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/crgimenes/compterm/sillyname"
 )
 
 const sessionTTL = 3 * time.Hour
@@ -21,8 +19,6 @@ type Control struct {
 
 type SessionData struct {
 	ExpireAt      time.Time
-	CurrentScreen int
-	Nick          string
 	Authenticated bool
 }
 
@@ -60,10 +56,6 @@ func (c *Control) Get(r *http.Request) (string, *SessionData, bool) {
 	s, ok := c.lookup(cookie.Value)
 	if !ok {
 		return "", nil, false
-	}
-
-	if s.Nick == "" {
-		s.Nick = sillyname.Generate()
 	}
 
 	return cookie.Value, &s, true
@@ -116,9 +108,7 @@ func (c *Control) Save(w http.ResponseWriter, r *http.Request, id string, sessio
 
 func (c *Control) Create() (string, *SessionData) {
 	sessionData := &SessionData{
-		CurrentScreen: 0,
-		Nick:          sillyname.Generate(),
-		ExpireAt:      time.Now().Add(sessionTTL),
+		ExpireAt: time.Now().Add(sessionTTL),
 	}
 
 	return RandomID(), sessionData

@@ -1,9 +1,7 @@
 package main
 
 import (
-	"context"
 	"crypto/subtle"
-	"encoding/json"
 	"fmt"
 	"html"
 	"io"
@@ -20,9 +18,6 @@ import (
 
 	"github.com/crgimenes/compterm/assets"
 	"github.com/crgimenes/compterm/config"
-	"github.com/crgimenes/compterm/constants"
-	"github.com/crgimenes/compterm/prelude"
-	"github.com/crgimenes/compterm/protocol"
 	"github.com/crgimenes/compterm/screen"
 	"github.com/crgimenes/compterm/session"
 
@@ -34,26 +29,18 @@ import (
 const cookieName = "compterm"
 
 var (
-	screenManager    = screen.NewManager()
-	_, defaultScreen = screenManager.GetScreenByID(0)
-	ptmx             *os.File
-	GitTag           string           = "0.0.0v"
-	sc               *session.Control = session.New(cookieName)
-	mx               sync.Mutex
+	defaultScreen = screen.New(25, 80) // rows, columns
+	ptmx          *os.File
+	GitTag        string           = "0.0.0v"
+	sc            *session.Control = session.New(cookieName)
+	mx            sync.Mutex
 )
 
 func runCmd() {
-	// clean screen
-	//os.Stdout.WriteString("\033[2J\033[0;0H")
+	var err error
 
-	var (
-		err error
-	)
-
-	cmdAux := config.CFG.Command
-	cmd := strings.Split(cmdAux, " ")
-
-	c := exec.Command(cmd[0], cmd[1:]...)
+	cmd := strings.Split(config.CFG.Command, " ")
+	c := exec.Command(cmd[0], cmd[1:]...) // #nosec G204 -- operator-provided command
 
 	c.Env = os.Environ()
 	c.Env = append(c.Env, fmt.Sprintf("COMPTERM=%d", os.Getpid()))
@@ -80,11 +67,8 @@ func runCmd() {
 
 	_ = pty.InheritSize(os.Stdin, ptmx)
 
-	defaultScreen.Input = ptmx // resive input from from user
-
-	// Copy stdin to the pty and the pty to stdout.
+	// Copy stdin to the pty, and the pty to both stdout and the broadcast.
 	go func() { _, _ = io.Copy(ptmx, os.Stdin) }()
-	//_, _ = io.Copy(defaultScreen, ptmx)
 
 	go func() {
 		buf := make([]byte, 1024)
@@ -107,7 +91,6 @@ func runCmd() {
 	err = c.Wait()
 	if err != nil {
 		log.Printf("error waiting for command: %s\r\n", err)
-		// TODO: send error to screen and close clients
 	}
 }
 
@@ -226,35 +209,12 @@ func mainHandler(w http.ResponseWriter, r *http.Request) {
 	http.FileServer(assets.FS).ServeHTTP(w, r)
 }
 
-///////////////////////////////////////////////
-
-type dummyProvider struct {
-	Screen *screen.Screen
-}
-
-func (d dummyProvider) Write(p []byte) (n int, err error) {
-	// input from webbrowser / websocket
-	_, _ = d.Screen.Write(fmt.Appendf(nil, "- %s\r\n", string(p)))
-	return len(p), nil
-}
-
-func (d dummyProvider) LoopWrite() {
-	// output to webbrowser / websocket
-	for {
-		time.Sleep(1 * time.Second)
-		_, _ = d.Screen.Write(fmt.Appendf(nil, "dummyProvider: %s\r\n", time.Now().String()))
-	}
-}
-
-///////////////////////////////////////////////
-
 func wsHandler(w http.ResponseWriter, r *http.Request) {
 	sid, sd, ok := sc.Get(r)
 	if !ok {
 		sid, sd = sc.Create()
 	}
 
-	// renew session
 	sc.Save(w, r, sid, sd)
 
 	if !isAuthorized(r, sd) {
@@ -265,109 +225,16 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 	c, err := websocket.Accept(w, r, nil)
 	if err != nil {
 		log.Println(err)
-
 		return
 	}
 
 	client := screen.NewClient(c)
 	client.SessionID = sid
-
-	///////////////////////////////////////////////
-	_ = defaultScreen.AttachClient(client, false)
-
-	/*
-			// TODO: use the manager to create a new screen
-			// TODO: enable change screen
-
-		   // test dummyProvider
-		   s := screen.New(24, 80)
-
-		   d := dummyProvider{Screen: s}
-		   s.Input = d
-
-		   go d.LoopWrite()
-		   s.AttachClient(client, true)
-	*/
-}
-
-////////////////////////////////////////
-
-type wsWriter struct {
-	c *websocket.Conn
-}
-
-func (w wsWriter) Write(p []byte) (n int, err error) {
-	// input from webbrowser / websocket
-	err = w.c.Write(context.Background(), websocket.MessageText, p)
-	if err != nil {
-		log.Println(err)
-		return 0, err
-	}
-	return len(p), nil
-}
-
-func (w wsWriter) LoopWrite() {
-	buf := make([]byte, constants.BufferSize)
-	for {
-		_, data, err := w.c.Read(context.Background())
-		if err != nil {
-			log.Println(err)
-			return
-		}
-
-		cmd, n, _, err := protocol.Decode(buf, data)
-		if err != nil {
-			log.Println(err)
-			return
-		}
-
-		err = defaultScreen.Send(cmd, buf[:n])
-		if err != nil {
-			log.Println(err)
-			return
-		}
-	}
-}
-
-////////////////////////////////////////
-
-func wsproxyHandler(w http.ResponseWriter, r *http.Request) {
-	if !config.CFG.ProxyMode {
-		w.WriteHeader(http.StatusForbidden)
-		_, _ = w.Write([]byte("proxy mode is disabled"))
-		return
-	}
-
-	sid, sd, ok := sc.Get(r)
-	if !ok {
-		sid, sd = sc.Create()
-	}
-
-	// renew session
-	sc.Save(w, r, sid, sd)
-
-	if !isAuthorized(r, sd) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return
-	}
-
-	c, err := websocket.Accept(w, r, nil)
-	if err != nil {
-		log.Println(err)
-
-		return
-	}
-
-	// TODO: permit multiple clients send data to websocket
-
-	ws := wsWriter{c: c}
-	defaultScreen.Input = ws
-	ws.LoopWrite()
+	defaultScreen.AttachClient(client)
 }
 
 func newMux() *http.ServeMux {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/wsproxy", wsproxyHandler)
 	mux.HandleFunc("/ws", wsHandler)
 	mux.HandleFunc("/login", loginHandler)
 	mux.HandleFunc("/", mainHandler)
@@ -387,91 +254,11 @@ func serveHTTP() {
 	log.Fatal(s.ListenAndServe())
 }
 
-func apiHandler(w http.ResponseWriter, r *http.Request) {
-	_, err := prelude.Prepare(w, r, []string{http.MethodGet}, true)
-	if err != nil {
-		return
-	}
-
-	parameters := prelude.GetParameters("/api/action/", r)
-
-	if len(parameters) < 1 {
-		log.Printf("invalid path")
-		prelude.RErrorBadRequest(w)
-		return
-	}
-
-	cmd := parameters[0]
-	switch cmd {
-	case "get-connected-clients":
-		// curl -X GET http://localhost:2201/api/action/get-connected-clients
-
-		clients := defaultScreen.ListConnectedClients()
-		_, _ = w.Write(fmt.Appendf(nil, "{clients: %d}\n", len(clients)))
-		return
-	case "list-connected-clients":
-		// curl -X GET http://localhost:2201/api/action/list-connected-clients
-
-		clients := defaultScreen.ListConnectedClients()
-		j, err := json.MarshalIndent(clients, "", "  ")
-		if err != nil {
-			log.Println(err)
-			_, _ = w.Write(fmt.Appendf(nil, "{error: %q}\n", err))
-			return
-		}
-
-		_, _ = w.Write(j)
-		return
-
-	case "enable-ws-stream":
-		// curl -X GET http://localhost:2201/api/action/enable-ws-stream
-
-		rows, columns := defaultScreen.Size()
-		s := defaultScreen
-
-		_ = s.Send(
-			constants.MSG,
-			fmt.Appendf(nil, "\033[8;%d;%dt\033[2J\033[0;0H", rows, columns))
-		_ = s.Send(
-			constants.RESIZE,
-			fmt.Appendf(nil, "%d:%d", rows, columns))
-	case "disable-ws-stream":
-		// curl -X GET http://localhost:2201/api/action/disable-ws-stream
-
-	case "get-version":
-		// curl -X GET http://localhost:2201/api/action/get-version
-
-		_, _ = w.Write(fmt.Appendf(nil, "{version: %q}\n", GitTag))
-		return
-	default:
-		prelude.RErrorBadRequest(w)
-		return
-	}
-	_, _ = w.Write([]byte("{status: \"ok\"}\n"))
-}
-
-func serveAPI() {
-	mux := http.NewServeMux()
-
-	mux.HandleFunc("/api/action/", apiHandler)
-
-	s := &http.Server{
-		Handler:        mux,
-		Addr:           config.CFG.APIListen,
-		ReadTimeout:    5 * time.Second,
-		WriteTimeout:   5 * time.Second,
-		MaxHeaderBytes: 1 << 20,
-	}
-
-	log.Printf("Listening API on %v\n", config.CFG.APIListen)
-	log.Fatal(s.ListenAndServe())
-}
-
 func updateTerminalSize() {
-	// Update window size.
 	mx.Lock()
 	_ = pty.InheritSize(os.Stdin, ptmx)
 	mx.Unlock()
+
 	columns, rows, err := term.GetSize(int(os.Stdin.Fd()))
 	if err != nil {
 		log.Fatalf("error getting size: %s\r\n", err)
@@ -488,16 +275,14 @@ func main() {
 		log.Fatalf("error loading config: %s\n", err)
 	}
 
-	// verify if there is a pid file
+	// refuse to nest inside another compterm session
 	if !config.CFG.IgnorePID {
-		comptermPID := os.Getenv("COMPTERM")
-		if comptermPID != "" {
-			fmt.Printf("There is already a compterm running, pid: %s\n", comptermPID)
+		if pid := os.Getenv("COMPTERM"); pid != "" {
+			fmt.Printf("There is already a compterm running, pid: %s\n", pid)
 			os.Exit(1)
 		}
 	}
 
-	/////////////////////////////////////////////////
 	logFile := config.CFG.Path + "/compterm.log"
 	f, err := os.OpenFile(filepath.Clean(logFile), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
 	if err != nil {
@@ -508,15 +293,12 @@ func main() {
 	log.Printf("compterm version %s\n", GitTag)
 	log.Printf("pid: %d\n", os.Getpid())
 
-	// Handle signals
+	// Handle terminal resize.
 	ch := make(chan os.Signal, 1)
 	signal.Notify(ch, syscall.SIGWINCH)
 	go func() {
-		for caux := range ch {
-			switch caux {
-			case syscall.SIGWINCH:
-				updateTerminalSize()
-			}
+		for range ch {
+			updateTerminalSize()
 		}
 	}()
 	ch <- syscall.SIGWINCH // Initial resize.
@@ -532,13 +314,7 @@ func main() {
 		}
 	}()
 
-	go serveAPI()
 	go serveHTTP()
 
-	if !config.CFG.ProxyMode {
-		runCmd()
-		return
-	}
-
-	<-make(chan struct{})
+	runCmd()
 }

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"slices"
 	"sync"
 	"time"
 
@@ -16,202 +17,33 @@ import (
 	"github.com/crgimenes/compterm/stream"
 )
 
-type ScreenClientProperties struct {
-	WritePermission bool
-}
-
+// Screen broadcasts a single terminal to every attached client. It keeps an
+// authoritative in-memory terminal emulator so new clients can be brought to
+// the current state.
 type Screen struct {
-	Title             string                              `json:"title"`
-	Columns           int                                 `json:"columns"`
-	Rows              int                                 `json:"rows"`
-	Clients           []*Client                           `json:"-"` // attached clients
-	ClientsProperties map[*Client]*ScreenClientProperties `json:"-"`
-	Stream            *stream.Stream                      `json:"-"`
-	mt                *mterm.Terminal                     `json:"-"` // terminal emulator
-	Input             io.Writer                           `json:"-"` // receive input (stdin) from attached clients and other sources
-	mx                sync.Mutex                          `json:"-"`
-}
-
-type Manager struct {
-	Screens []*Screen
+	Columns int             `json:"columns"`
+	Rows    int             `json:"rows"`
+	Clients []*Client       `json:"-"`
+	Stream  *stream.Stream  `json:"-"`
+	mt      *mterm.Terminal `json:"-"`
+	mx      sync.Mutex      `json:"-"`
 }
 
 type Client struct {
-	bs            *stream.Stream  `json:"-"`
-	conn          *websocket.Conn `json:"-"`
-	SessionID     string          `json:"session_id"`
-	outbuff       []byte          `json:"-"`
-	mx            sync.Mutex      `json:"-"`
-	CurrentScreen *Screen         `json:"-"`
-	done          chan struct{}   `json:"-"`
-}
-
-func NewManager() *Manager {
-	s := New(25, 80) // rows, columns
-	s.Title = "default"
-
-	return &Manager{
-		Screens: []*Screen{s},
-	}
-}
-
-// attach a client to a screen
-func (s *Screen) AttachClient(c *Client, writePermission bool) error {
-	s.mx.Lock()
-	defer s.mx.Unlock()
-	// check if client is already attached
-	for _, ac := range s.Clients {
-		if ac == c {
-			ac.CurrentScreen = s
-			s.ClientsProperties[c].WritePermission = writePermission
-			s.updateToCurrentState(c)
-			return nil
-		}
-	}
-
-	// attach client to screen
-	s.Clients = append(s.Clients, c)
-	s.ClientsProperties[c] = &ScreenClientProperties{
-		WritePermission: writePermission,
-	}
-	c.CurrentScreen = s
-	s.updateToCurrentState(c)
-
-	return nil
-}
-
-// detach a client from a screen
-func (s *Screen) DetachClient(c *Client) error {
-	// check if client is attached
-	for i, ac := range s.Clients {
-		if ac == c { // client is attached
-			// remove client
-			s.Clients = append(
-				s.Clients[:i],
-				s.Clients[i+1:]...)
-			s.ClientsProperties[c] = nil
-			return nil
-		}
-	}
-
-	return fmt.Errorf("client not attached")
-}
-
-// detach a client from all screens
-func (m *Manager) DetachClientFromAllScreens(c *Client) {
-	for _, s := range m.Screens {
-		_ = s.DetachClient(c)
-	}
-}
-
-// change current screen
-func (m *Manager) ChangeScreen(c *Client, s *Screen) error {
-	// check if client is attached to screen return error if not
-	for _, ac := range s.Clients {
-		if ac == c {
-			ac.CurrentScreen = s
-			s.updateToCurrentState(c)
-			return nil
-		}
-	}
-
-	return fmt.Errorf("client not attached to screen")
-}
-
-// handle client input
-func (c *Client) HandleInput() {
-	buff := make([]byte, constants.BufferSize)
-	for {
-		select {
-		case <-c.done:
-			return
-		default:
-			n, err := c.ReadFromWS(buff) // Read from websocket
-			if err != nil {
-				cs := websocket.CloseStatus(err)
-				if cs != websocket.StatusNormalClosure &&
-					cs != websocket.StatusGoingAway &&
-					cs != -1 {
-					log.Printf("error reading from websocket: %s\r\n", err)
-				}
-				c.Close()
-				return
-			}
-
-			s := string(buff[:n])
-			// prevent \x1b[>0;276;0c
-			if s == "\x1b[>0;276;0c" {
-				continue
-			}
-
-			// TODO: parse input and send to the Filo scripting engine
-
-			ac := c.CurrentScreen.ClientsProperties[c]
-
-			if ac.WritePermission {
-				_, err = c.CurrentScreen.Input.Write(buff[:n]) // Write to pty
-				if err != nil {
-					log.Printf("error writing to pty: %s\r\n", err)
-					c.Close()
-					return
-				}
-			}
-		}
-	}
-}
-
-// remove a screen
-func (m *Manager) RemoveScreen(s *Screen) error {
-
-	// move clients to default screen
-	// TODO: check if client is attached to screen
-	// TODO: check client write permission
-	// TODO: send resize, clear screen, send cursor position and screen to client
-	// TODO: kill clients
-
-	// remove screen
-	for i, sc := range m.Screens {
-		if sc == s {
-			// TODO: kill clients
-			m.Screens = append(
-				m.Screens[:i],
-				m.Screens[i+1:]...)
-		}
-	}
-
-	return nil
-}
-
-// get default screen
-func (m *Manager) GetDefaultScreen() *Screen {
-	// todo check if default screen exists
-	return m.Screens[0]
-}
-
-// get screen by id
-func (m *Manager) GetScreenByID(id int) (bool, *Screen) {
-	// todo check if screen exists
-	return true, m.Screens[id]
-}
-
-// get screen by Title
-func (m *Manager) GetScreenByTitle(title string) (bool, *Screen) {
-	for _, s := range m.Screens {
-		if s.Title == title {
-			return true, s
-		}
-	}
-	return false, nil
+	bs        *stream.Stream
+	conn      *websocket.Conn
+	SessionID string `json:"session_id"`
+	outbuff   []byte
+	mx        sync.Mutex
+	done      chan struct{}
 }
 
 func New(rows, columns int) *Screen {
 	s := &Screen{
-		Columns:           columns,
-		Rows:              rows,
-		Stream:            stream.New(),
-		mt:                mterm.New(rows, columns),
-		ClientsProperties: make(map[*Client]*ScreenClientProperties),
-		//mx:                sync.Mutex{},
+		Columns: columns,
+		Rows:    rows,
+		Stream:  stream.New(),
+		mt:      mterm.New(rows, columns),
 	}
 
 	go s.writeToAttachedClients()
@@ -219,13 +51,24 @@ func New(rows, columns int) *Screen {
 	return s
 }
 
-func (s *Screen) RemoveAttachedClient(c *Client) {
+// AttachClient attaches a client and brings it to the current screen state.
+func (s *Screen) AttachClient(c *Client) {
+	s.mx.Lock()
+	defer s.mx.Unlock()
+
+	if slices.Contains(s.Clients, c) {
+		s.updateToCurrentState(c)
+		return
+	}
+
+	s.Clients = append(s.Clients, c)
+	s.updateToCurrentState(c)
+}
+
+func (s *Screen) removeAttachedClient(c *Client) {
 	for i, ac := range s.Clients {
 		if ac == c {
-			s.Clients = append(
-				s.Clients[:i],
-				s.Clients[i+1:]...)
-			s.ClientsProperties[c] = nil
+			s.Clients = append(s.Clients[:i], s.Clients[i+1:]...)
 			return
 		}
 	}
@@ -241,7 +84,6 @@ func (s *Screen) writeToAttachedClients() {
 				continue
 			}
 			log.Printf("error reading from byte stream: %s\r\n", err)
-			//os.Exit(1) // TODO: handle error
 		}
 
 		func() {
@@ -250,17 +92,14 @@ func (s *Screen) writeToAttachedClients() {
 			for _, c := range s.Clients {
 				select {
 				case <-c.done:
-					s.RemoveAttachedClient(c)
+					s.removeAttachedClient(c)
 					continue
 				default:
-					if c.CurrentScreen != s { // client is attached to this screen but is not the current screen
-						continue
-					}
 					err = c.Send(constants.MSG, msg[:n])
 					if err != nil {
 						log.Printf("error writing to websocket: %s\r\n", err)
 						c.Close()
-						s.RemoveAttachedClient(c)
+						s.removeAttachedClient(c)
 						continue
 					}
 				}
@@ -269,22 +108,11 @@ func (s *Screen) writeToAttachedClients() {
 	}
 }
 
-// Writer interface
+// Write implements io.Writer: it feeds the emulator and the broadcast stream.
 func (s *Screen) Write(p []byte) (n int, err error) {
-	// write to stdout
-	//n, err = os.Stdout.Write(p)
-	//if err != nil {
-	//	log.Printf("error writing to stdout: %s\r\n", err)
-	//	return
-	//}
-
-	_, _ = s.mt.Write(p) // write to mterm buffer
-
-	// write to websocket
+	_, _ = s.mt.Write(p)
 	_, _ = s.Stream.Write(p)
-
-	n = len(p)
-	return
+	return len(p), nil
 }
 
 func (s *Screen) updateToCurrentState(c *Client) {
@@ -298,7 +126,6 @@ func (s *Screen) updateToCurrentState(c *Client) {
 		s.Rows, s.Columns, msg, crows+1, ccolumns+1)
 
 	_ = c.Send(constants.MSG, []byte(m))
-
 }
 
 func (s *Screen) Read(p []byte) (n int, err error) {
@@ -306,19 +133,12 @@ func (s *Screen) Read(p []byte) (n int, err error) {
 }
 
 func (s *Screen) Send(prefix byte, p []byte) (err error) {
-	//s.mx.Lock()
-	//defer s.mx.Unlock()
-	for i, c := range s.Clients {
+	for _, c := range s.Clients {
 		err = c.Send(prefix, p)
 		if err != nil {
 			log.Printf("error writing to websocket: %s\r\n", err)
 			c.Close()
-			// remove client
-			s.Clients = append(
-				s.Clients[:i],
-				s.Clients[i+1:]...)
-			// remove client properties
-			s.ClientsProperties[c] = nil
+			s.removeAttachedClient(c)
 			continue
 		}
 	}
@@ -326,7 +146,7 @@ func (s *Screen) Send(prefix byte, p []byte) (err error) {
 	return nil
 }
 
-// Resize screen
+// Resize resizes the screen and notifies attached clients.
 func (s *Screen) Resize(rows, columns int) {
 	s.mx.Lock()
 	defer s.mx.Unlock()
@@ -338,37 +158,30 @@ func (s *Screen) Resize(rows, columns int) {
 	s.Columns = columns
 	s.mt.Resize(rows, columns)
 
-	_, _ = s.Write(fmt.Appendf(nil, "\033[8;%d;%dt",
-		s.Rows,
-		s.Columns,
-	))
-
-	_ = s.Send(constants.RESIZE,
-		fmt.Appendf(nil, "%d:%d", rows, columns))
+	_, _ = s.Write(fmt.Appendf(nil, "\033[8;%d;%dt", s.Rows, s.Columns))
+	_ = s.Send(constants.RESIZE, fmt.Appendf(nil, "%d:%d", rows, columns))
 }
 
-// Get screen size
 func (s *Screen) Size() (rows, columns int) {
 	return s.Rows, s.Columns
 }
 
-// GetScreenAsANSI returns the screen as ANSI
+// GetScreenAsANSI returns the current screen content as ANSI.
 func (s *Screen) GetScreenAsANSI() []byte {
 	return s.mt.GetScreenAsAnsi()
 }
 
-// CursorPos() returns the cursor position
+// CursorPos returns the cursor position.
 func (s *Screen) CursorPos() (rows, columns int) {
 	return s.mt.CursorPos()
 }
 
-// List of connected clients
+// ListConnectedClients returns the attached clients.
 func (s *Screen) ListConnectedClients() []*Client {
 	s.mx.Lock()
-	ac := s.Clients
-	s.mx.Unlock()
+	defer s.mx.Unlock()
 
-	return ac
+	return s.Clients
 }
 
 func NewClient(conn *websocket.Conn) *Client {
@@ -376,12 +189,11 @@ func NewClient(conn *websocket.Conn) *Client {
 		bs:      stream.New(),
 		conn:    conn,
 		outbuff: make([]byte, constants.BufferSize),
-		mx:      sync.Mutex{},
 		done:    make(chan struct{}),
 	}
 
 	go c.writeLoop()
-	go c.HandleInput()
+	go c.drainInput()
 
 	return c
 }
@@ -396,7 +208,7 @@ func (c *Client) Close() {
 	}
 }
 
-// IsClosed returns true if the client is closed
+// IsClosed reports whether the client is closed.
 func (c *Client) IsClosed() bool {
 	select {
 	case <-c.done:
@@ -406,7 +218,7 @@ func (c *Client) IsClosed() bool {
 	}
 }
 
-// Send sends a message to the client using the stream
+// Send frames a message and queues it to the client's stream.
 func (c *Client) Send(prefix byte, p []byte) (err error) {
 	c.mx.Lock()
 	defer c.mx.Unlock()
@@ -426,33 +238,30 @@ func (c *Client) Send(prefix byte, p []byte) (err error) {
 	return nil
 }
 
-// Write writes to the stream
-func (c *Client) Write(p []byte) (n int, err error) {
-	err = c.Send(constants.MSG, p)
-	if err != nil {
-		return 0, err
+// drainInput reads and discards client messages; compterm is read-only, so the
+// only purpose is to detect disconnects.
+func (c *Client) drainInput() {
+	for {
+		select {
+		case <-c.done:
+			return
+		default:
+			_, _, err := c.conn.Read(context.Background())
+			if err != nil {
+				cs := websocket.CloseStatus(err)
+				if cs != websocket.StatusNormalClosure &&
+					cs != websocket.StatusGoingAway &&
+					cs != -1 {
+					log.Printf("error reading from websocket: %s\r\n", err)
+				}
+				c.Close()
+				return
+			}
+		}
 	}
-
-	return len(p), nil
 }
 
-// Read reads from the stream
-func (c *Client) Read(p []byte) (n int, err error) {
-	return c.bs.Read(p)
-}
-
-// ReadFromWS reads from the websocket
-func (c *Client) ReadFromWS(p []byte) (n int, err error) {
-	_, r, err := c.conn.Read(context.Background())
-	if err != nil {
-		return 0, err
-	}
-
-	n = copy(p, r)
-	return n, nil
-}
-
-// writeLoop writes to the websocket
+// writeLoop drains the client stream to the websocket.
 func (c *Client) writeLoop() {
 	buff := make([]byte, constants.BufferSize)
 	for {
@@ -472,10 +281,8 @@ func (c *Client) writeLoop() {
 				if cs != websocket.StatusNormalClosure &&
 					cs != websocket.StatusGoingAway &&
 					cs != -1 {
-					log.Printf("error writing to websocket: %s, %v\r\n",
-						err, cs)
+					log.Printf("error writing to websocket: %s, %v\r\n", err, cs)
 				}
-				// removeConnection(c)
 				c.Close()
 				return
 			}

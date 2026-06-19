@@ -8,12 +8,10 @@ import (
 
 func newTestConfig(path string) *Config {
 	return &Config{
-		Listen:    defaultListen,
-		APIListen: defaultAPIListen,
-		Command:   "/bin/sh",
-		MOTD:      defaultMOTD,
-		Path:      path,
-		InitFile:  "init.filo",
+		Listen:   defaultListen,
+		Command:  "/bin/sh",
+		Path:     path,
+		InitFile: "init.filo",
 	}
 }
 
@@ -26,32 +24,32 @@ func TestLoadFilo(t *testing.T) {
 	}{
 		{
 			name:   "override string and bool",
-			script: "(set Listen \"127.0.0.1:9999\")\n(set Debug #t)\n",
+			script: "(set Listen \"127.0.0.1:9999\")\n(set IgnorePID #t)\n",
 			check: func(t *testing.T, c *Config) {
 				if c.Listen != "127.0.0.1:9999" {
 					t.Errorf("Listen = %q, want 127.0.0.1:9999", c.Listen)
 				}
-				if !c.Debug {
-					t.Errorf("Debug = false, want true")
+				if !c.IgnorePID {
+					t.Errorf("IgnorePID = false, want true")
 				}
 			},
 		},
 		{
 			name:   "getEnv falls back when unset",
-			script: "(set MOTD (getEnv \"COMPTERM_TEST_MOTD\" \"fallback motd\"))\n",
+			script: "(set AuthToken (getEnv \"COMPTERM_TEST_TOKEN\" \"fallback token\"))\n",
 			check: func(t *testing.T, c *Config) {
-				if c.MOTD != "fallback motd" {
-					t.Errorf("MOTD = %q, want fallback motd", c.MOTD)
+				if c.AuthToken != "fallback token" {
+					t.Errorf("AuthToken = %q, want fallback token", c.AuthToken)
 				}
 			},
 		},
 		{
 			name:   "getEnv reads the environment",
-			script: "(set MOTD (getEnv \"COMPTERM_TEST_MOTD\" \"fallback\"))\n",
-			env:    map[string]string{"COMPTERM_TEST_MOTD": "from env"},
+			script: "(set AuthToken (getEnv \"COMPTERM_TEST_TOKEN\" \"fallback\"))\n",
+			env:    map[string]string{"COMPTERM_TEST_TOKEN": "from env"},
 			check: func(t *testing.T, c *Config) {
-				if c.MOTD != "from env" {
-					t.Errorf("MOTD = %q, want from env", c.MOTD)
+				if c.AuthToken != "from env" {
+					t.Errorf("AuthToken = %q, want from env", c.AuthToken)
 				}
 			},
 		},

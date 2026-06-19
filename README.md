@@ -23,20 +23,15 @@ In production mode, resources are integrated into the executable itself.
 Compterm accepts the following command-line flags:
 
 - `-listen` string: web/websocket listen address (default `0.0.0.0:2200`)
-- `-api_listen` string: control API listen address (default `127.0.0.1:2201`)
-- `-api_key` string: control API key (empty disables the API)
+- `-auth_token` string: viewer access token (empty disables authentication)
 - `-command` string: command to share (default `$SHELL`)
-- `-motd` string: message of the day
 - `-path` string: path to configuration files (default `$HOME/.config/compterm`)
 - `-init` string: configuration file name (default `init.filo`)
-- `-debug`: enable debug mode
 - `-ignore_pid`: ignore the COMPTERM pid guard
-- `-proxy_mode`: accept terminal data from `/wsproxy`
 
 It also recognizes the matching environment variables: `COMPTERM_LISTEN`,
-`COMPTERM_API_LISTEN`, `COMPTERM_API_KEY`, `COMPTERM_COMMAND`, `COMPTERM_MOTD`,
-`COMPTERM_PATH`, `COMPTERM_INIT_FILE`, `COMPTERM_DEBUG`, `COMPTERM_IGNORE_PID`,
-and `COMPTERM_PROXY_MODE`.
+`COMPTERM_AUTH_TOKEN`, `COMPTERM_COMMAND`, `COMPTERM_PATH`, `COMPTERM_INIT_FILE`,
+and `COMPTERM_IGNORE_PID`.
 
 Finally, Compterm reads a [Filo](https://github.com/crgimenes/filo)
 configuration file, looked up at `./init.filo` and then
@@ -46,12 +41,19 @@ configuration file, looked up at `./init.filo` and then
 ```lisp
 ;; init.filo
 (set Listen "0.0.0.0:2200")
-(set MOTD "Welcome to my class")
-(set Debug #f)
 
-;; getEnv reads an environment variable with a fallback:
-(set APIKey (getEnv "COMPTERM_API_KEY" ""))
+;; Require a token to connect (empty = open). getEnv reads an
+;; environment variable with a fallback:
+(set AuthToken (getEnv "COMPTERM_AUTH_TOKEN" ""))
 ```
+
+## Authentication
+
+Authentication is optional. With an empty `AuthToken` (the default) anyone who
+can reach the page connects immediately — convenient for open demonstrations.
+Set a token (via flag, `COMPTERM_AUTH_TOKEN`, or `init.filo`) to require it:
+viewers get a login page, and a shared link of the form `?token=<token>` logs
+in automatically.
 
 ## Configuration Hierarchy
 
