@@ -250,10 +250,19 @@ func serveLogin(w http.ResponseWriter, status int, errMsg string) {
 	_, _ = fmt.Fprintf(w, loginPageFmt, errBlock)
 }
 
+// redirectToBase sends a relative ("./") redirect set manually, so it resolves
+// in the browser against the current URL — working whether compterm is served
+// at the root or under a reverse-proxy subpath (e.g. /compterm/). net/http's
+// Redirect would absolutize it against the proxy-stripped path and send "/".
+func redirectToBase(w http.ResponseWriter) {
+	w.Header().Set("Location", "./")
+	w.WriteHeader(http.StatusSeeOther)
+}
+
 func loginHandler(w http.ResponseWriter, r *http.Request) {
 	// nothing to log into when authentication is disabled
 	if config.CFG.AuthToken == "" {
-		http.Redirect(w, r, "/", http.StatusSeeOther)
+		redirectToBase(w)
 		return
 	}
 
@@ -271,7 +280,7 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 	if authorize(config.CFG.AuthToken, r.PostFormValue("token"), false) {
 		sd.Authenticated = true
 		sc.Save(w, r, sid, sd)
-		http.Redirect(w, r, "/", http.StatusSeeOther)
+		redirectToBase(w)
 		return
 	}
 

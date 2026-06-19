@@ -81,8 +81,11 @@ function decodeProtocol(buffer) {
 }
 
 function connectWS() {
-  const { host, pathname: path, protocol: proto } = window.location;
-  const url = `${proto === 'https:' ? 'wss' : 'ws'}://${host}${path === '/' ? '' : path}/ws`;
+  const { host, pathname, protocol: proto } = window.location;
+  // strip trailing slash so a subpath (e.g. /compterm/) yields /compterm/ws,
+  // not /compterm//ws (which the server would redirect and break the upgrade).
+  const base = pathname.replace(/\/+$/, '');
+  const url = `${proto === 'https:' ? 'wss' : 'ws'}://${host}${base}/ws`;
   const ws = new WebSocket(url);
 
   ws.binaryType = 'blob';
