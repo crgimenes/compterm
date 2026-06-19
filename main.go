@@ -41,18 +41,25 @@ var (
 // session presents a consistent terminal type and programs emit colors the
 // browser renders correctly (instead of e.g. colon-form truecolor).
 func ptyEnv() []string {
-	env := os.Environ()
-	if config.CFG.Term != "" {
-		filtered := make([]string, 0, len(env)+2)
-		for _, kv := range env {
-			if strings.HasPrefix(kv, "TERM=") || strings.HasPrefix(kv, "COLORTERM=") {
-				continue
-			}
-			filtered = append(filtered, kv)
+	cfg := config.CFG
+	out := make([]string, 0, len(os.Environ())+3)
+	for _, kv := range os.Environ() {
+		// drop inherited TERM/COLORTERM only when we set our own below
+		if cfg.Term != "" && strings.HasPrefix(kv, "TERM=") {
+			continue
 		}
-		env = append(filtered, "TERM="+config.CFG.Term)
+		if cfg.ColorTerm != "" && strings.HasPrefix(kv, "COLORTERM=") {
+			continue
+		}
+		out = append(out, kv)
 	}
-	return append(env, fmt.Sprintf("COMPTERM=%d", os.Getpid()))
+	if cfg.Term != "" {
+		out = append(out, "TERM="+cfg.Term)
+	}
+	if cfg.ColorTerm != "" {
+		out = append(out, "COLORTERM="+cfg.ColorTerm)
+	}
+	return append(out, fmt.Sprintf("COMPTERM=%d", os.Getpid()))
 }
 
 func runCmd() {
@@ -224,6 +231,9 @@ func mainHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Assets are embedded and have no cache validators, so tell the browser to
+	// revalidate — otherwise an old term.min.js lingers after an upgrade.
+	w.Header().Set("Cache-Control", "no-cache")
 	http.FileServer(assets.FS).ServeHTTP(w, r)
 }
 
@@ -278,8 +288,10 @@ func updateTerminalSize() {
 	mx.Unlock()
 
 	columns, rows, err := term.GetSize(int(os.Stdin.Fd()))
-	if err != nil {
-		log.Fatalf("error getting size: %s\r\n", err)
+	if err != nil || rows <= 0 || columns <= 0 {
+		// No usable window size (e.g. stdin is not a sized tty): fall back to
+		// a sane default instead of dying or broadcasting a 0x0 screen.
+		rows, columns = 24, 80
 	}
 
 	defaultScreen.Resize(rows, columns)

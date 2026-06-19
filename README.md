@@ -26,13 +26,14 @@ Compterm accepts the following command-line flags:
 - `-auth_token` string: viewer access token (empty disables authentication)
 - `-command` string: command to share (default `$SHELL`)
 - `-term` string: TERM for the shared command (default `xterm-256color`; empty inherits the host's)
+- `-colorterm` string: COLORTERM for the shared command (default `truecolor`; empty disables 24-bit color)
 - `-path` string: path to configuration files (default `$HOME/.config/compterm`)
 - `-init` string: configuration file name (default `init.filo`)
 - `-ignore_pid`: ignore the COMPTERM pid guard
 
 It also recognizes the matching environment variables: `COMPTERM_LISTEN`,
-`COMPTERM_AUTH_TOKEN`, `COMPTERM_COMMAND`, `COMPTERM_TERM`, `COMPTERM_PATH`,
-`COMPTERM_INIT_FILE`, and `COMPTERM_IGNORE_PID`.
+`COMPTERM_AUTH_TOKEN`, `COMPTERM_COMMAND`, `COMPTERM_TERM`, `COMPTERM_COLORTERM`,
+`COMPTERM_PATH`, `COMPTERM_INIT_FILE`, and `COMPTERM_IGNORE_PID`.
 
 Finally, Compterm reads a [Filo](https://github.com/crgimenes/filo)
 configuration file, looked up at `./init.filo` and then
