@@ -1,10 +1,11 @@
 import { Terminal } from '@xterm/xterm';
 import { WebLinksAddon } from '@xterm/addon-web-links';
-import { ImageAddon, IImageAddonOptions } from '@xterm/addon-image';
-
+import { ImageAddon } from '@xterm/addon-image';
 
 const MSG = 0x1;
 const RESIZE = 0x2;
+
+const decoder = new TextDecoder();
 
 const termOptions = {
   // compterm is strictly one-way: the viewer never sends anything back, so the
@@ -38,73 +39,50 @@ const termOptions = {
   },
 };
 
-const terminal = new Terminal(termOptions);
-terminal.loadAddon(new WebLinksAddon());
-
-const imageAddon = new ImageAddon();
-terminal.loadAddon(imageAddon);
-
-terminal.open(document.getElementById('terminal'));
+let terminal;
 
 const progress = '/-\\|';
 let progressIndex = 0;
 
-function base64ToBytes(base64) {
-  const binString = atob(base64);
-  return Uint8Array.from(binString, (m) => m.codePointAt(0));
+// fnv1a computes the FNV-1a 32-bit hash, matching the Go protocol package.
+function fnv1a(bytes) {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < bytes.length; i++) {
+    hash ^= bytes[i];
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return hash >>> 0;
 }
 
+// decodeProtocol decodes one frame [cmd][counter][len][payload][fnv32] and
+// verifies its checksum, throwing on a short, truncated, or corrupt frame.
 function decodeProtocol(buffer) {
-  // validate buffer length
   if (buffer.length < 11) {
-    throw new Error("Buffer too short "
-      + buffer.length
-      + " \"" + (new TextDecoder().decode(buffer))) + "\"";
+    throw new Error('frame too short: ' + buffer.length);
   }
 
-  let offset = 0;
+  const view = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+  const command = buffer[0];
+  const counter = view.getUint16(1, false);
+  const payloadLength = view.getUint32(3, false);
 
-  // A: command byte
-  const command = buffer[offset];
-
-  offset += 1;
-
-  // B: counter (2 bytes, big endian)
-  const counter = (new DataView(buffer.slice(offset, offset + 2).buffer)).getUint16(0, false);
-
-  offset += 2;
-
-  // C: payload length (32 bits, big endian)
-  const payloadLength = (new DataView(buffer.slice(offset, offset + 4).buffer)).getUint32(0, false);
-
-  offset += 4;
-
-  // Validate payload length
-  if (offset + payloadLength + 4 > buffer.length) {
-    throw new Error("Invalid payload length");
+  if (7 + payloadLength + 4 > buffer.length) {
+    throw new Error('frame truncated');
   }
 
-  // D: payload (array of bytes)
-  const payload = buffer.slice(offset, offset + payloadLength);
+  const expected = view.getUint32(7 + payloadLength, false);
+  const actual = fnv1a(buffer.subarray(0, 7 + payloadLength));
+  if (expected !== actual) {
+    throw new Error('checksum mismatch');
+  }
 
-  offset += payloadLength;
-
-  // F: checksum (FNV-1a, 32 bits, big endian)
-  const checksum = (new DataView(buffer.slice(offset, offset + 4).buffer)).getUint32(0, false);
-
-  // TODO: verify checksum
-
-  return {
-    command,
-    counter,
-    payloadLength,
-    payload,
-  };
+  const payload = buffer.subarray(7, 7 + payloadLength);
+  return { command, counter, payloadLength, payload };
 }
 
 function connectWS() {
   const { host, pathname: path, protocol: proto } = window.location;
-  const url = `${proto === 'https:' ? 'wss' : 'ws'}://${host}${path === '/' ? '' : path}/ws`
+  const url = `${proto === 'https:' ? 'wss' : 'ws'}://${host}${path === '/' ? '' : path}/ws`;
   const ws = new WebSocket(url);
 
   ws.binaryType = 'blob';
@@ -114,25 +92,27 @@ function connectWS() {
   ws.onmessage = ({ data }) => {
     const reader = new FileReader();
     reader.onload = () => {
-      var array = new Uint8Array(reader.result);
-      while (array.length > 0) {
-        var { command, counter, payloadLength, payload } = decodeProtocol(array);
-        switch (command) {
-          case MSG:
-            terminal.write(new TextDecoder().decode(payload));
-            break;
-          case RESIZE:
-            const [cols, rows] = (new TextDecoder().decode(payload)).split(':');
-            terminal.resize(+rows, +cols);
-            break
-          default:
-            console.log("not implemented", array);
-            break;
+      let array = new Uint8Array(reader.result);
+      try {
+        // A single websocket message may carry several concatenated frames.
+        while (array.length >= 11) {
+          const { command, payloadLength, payload } = decodeProtocol(array);
+          switch (command) {
+            case MSG:
+              terminal.write(decoder.decode(payload));
+              break;
+            case RESIZE: {
+              const [cols, rows] = decoder.decode(payload).split(':');
+              terminal.resize(+rows, +cols);
+              break;
+            }
+            default:
+              console.log('unknown command', command);
+          }
+          array = array.subarray(payloadLength + 11);
         }
-        if (array.length <= payloadLength + 11) { // TODO: find a better way to verify if there is more data
-          break;
-        }
-        array = array.slice(payloadLength + 11);
+      } catch (err) {
+        console.log('frame decode error:', err.message);
       }
     };
     reader.readAsArrayBuffer(data);
@@ -153,7 +133,25 @@ function connectWS() {
   terminal.onerror = (err) => console.log(err);
 }
 
-// start the connection when the page is loaded
-window.onload = () => {
-    connectWS();
+// loadTheme fetches an optional palette from the server so the viewer can match
+// the operator's terminal. Falls back to the built-in theme.
+async function loadTheme() {
+  try {
+    const res = await fetch('theme.json', { cache: 'no-store' });
+    if (res.ok) return await res.json();
+  } catch (e) {
+    // ignore: use the built-in theme
+  }
+  return {};
 }
+
+window.onload = async () => {
+  termOptions.theme = Object.assign({}, termOptions.theme, await loadTheme());
+
+  terminal = new Terminal(termOptions);
+  terminal.loadAddon(new WebLinksAddon());
+  terminal.loadAddon(new ImageAddon());
+  terminal.open(document.getElementById('terminal'));
+
+  connectWS();
+};

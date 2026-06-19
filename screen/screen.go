@@ -32,10 +32,12 @@ type Screen struct {
 	mt      *mterm.Terminal `json:"-"`
 	mx      sync.Mutex      `json:"-"`
 
-	// writeMu serializes Write so the stateful clipboard filter is safe.
+	// writeMu serializes Write so the stateful stream filters are safe.
 	writeMu sync.Mutex      `json:"-"`
 	clip    clipboardFilter `json:"-"`
 	clipBuf []byte          `json:"-"`
+	sgr     sgrFilter       `json:"-"`
+	sgrBuf  []byte          `json:"-"`
 }
 
 type Client struct {
@@ -133,14 +135,16 @@ func (s *Screen) writeToAttachedClients() {
 	}
 }
 
-// Write implements io.Writer: it strips the host's clipboard sequences (OSC 52)
-// and feeds the cleaned bytes to both the emulator and the broadcast stream, so
-// neither the live deltas nor the snapshot can carry the host's clipboard.
+// Write implements io.Writer. It strips the host's clipboard sequences (OSC 52)
+// and normalizes colon-form color SGR to the semicolon form every xterm.js
+// renders correctly, then feeds the cleaned bytes to both the emulator and the
+// broadcast stream.
 func (s *Screen) Write(p []byte) (n int, err error) {
 	s.writeMu.Lock()
 	s.clipBuf = s.clip.filter(s.clipBuf[:0], p)
-	_, _ = s.mt.Write(s.clipBuf)
-	_, _ = s.Stream.Write(s.clipBuf)
+	s.sgrBuf = s.sgr.filter(s.sgrBuf[:0], s.clipBuf)
+	_, _ = s.mt.Write(s.sgrBuf)
+	_, _ = s.Stream.Write(s.sgrBuf)
 	s.writeMu.Unlock()
 	return len(p), nil
 }

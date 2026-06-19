@@ -75,6 +75,32 @@ Use `-token` (or `$COMPTERM_AUTH_TOKEN`) when the server requires
 authentication, and a `wss://` URL when connecting through a TLS reverse proxy.
 Press `q` or `Ctrl-C` to quit.
 
+# Colors
+
+Compterm relays the host's raw terminal stream, so colors appear in the browser
+exactly as the program emits them. Truecolor (24-bit RGB) is absolute and always
+matches your terminal. The indexed *palette* colors (16/256), however, are
+resolved against each terminal's own palette, so a program that uses them can
+look different in the browser than locally.
+
+If colors differ, enable truecolor in the program. For Neovim:
+
+```lua
+vim.opt.termguicolors = true -- init.lua
+```
+
+Compterm already advertises truecolor to the shared session
+(`COLORTERM=truecolor`) so most programs pick it up automatically.
+
+To make the viewer's palette match your terminal, drop a `theme.json` in the
+configuration directory (`$COMPTERM_PATH/theme.json`) with any
+[xterm.js theme](https://xtermjs.org/docs/api/terminal/interfaces/itheme/)
+fields:
+
+```json
+{ "background": "#1e1e2e", "foreground": "#cdd6f4", "red": "#f38ba8" }
+```
+
 # Contributing
 
 Contributions are welcome! Please refer to our contribution guidelines for details on how to contribute to this project.

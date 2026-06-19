@@ -12,14 +12,19 @@ dev-race: js-dev
 dev: js-dev
 	go run -tags dev .
 
+# Reinstall whenever package.json changes, so a dependency bump (e.g. a new
+# xterm version) actually reaches the bundle instead of using stale node_modules.
+node_modules: package.json
+	npm install --legacy-peer-deps
+	@touch node_modules
+
 js-deps:
 	npm clean-install --legacy-peer-deps
 
-js-dev:
+js-dev: node_modules
 	npx esbuild assets/term.js --outfile=assets/term.min.js --bundle --sourcemap
 
-js:
-	bash -c '[[ -d node_modules ]] || make js-deps'
+js: node_modules
 	npx esbuild assets/term.js --outfile=assets/term.min.js --bundle --minify
 
 js-clean:

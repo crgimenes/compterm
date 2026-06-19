@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/subtle"
+	"errors"
 	"fmt"
 	"html"
 	"io"
@@ -15,6 +16,7 @@ import (
 	"sync"
 	"syscall"
 	"time"
+	"unicode"
 
 	"github.com/crgimenes/compterm/assets"
 	"github.com/crgimenes/compterm/config"
@@ -62,11 +64,75 @@ func ptyEnv() []string {
 	return append(out, fmt.Sprintf("COMPTERM=%d", os.Getpid()))
 }
 
-func runCmd() {
-	var err error
+// splitCommand splits a command line into arguments, honoring single quotes,
+// double quotes, and backslash escapes, so commands with quoted arguments or
+// paths containing spaces work.
+func splitCommand(s string) ([]string, error) {
+	var (
+		args     []string
+		cur      []rune
+		inSingle bool
+		inDouble bool
+		escaped  bool
+		hasToken bool
+	)
 
-	cmd := strings.Split(config.CFG.Command, " ")
-	c := exec.Command(cmd[0], cmd[1:]...) // #nosec G204 -- operator-provided command
+	for _, r := range s {
+		switch {
+		case escaped:
+			cur = append(cur, r)
+			escaped = false
+		case r == '\\' && !inSingle:
+			escaped = true
+		case inSingle:
+			if r == '\'' {
+				inSingle = false
+			} else {
+				cur = append(cur, r)
+			}
+		case inDouble:
+			if r == '"' {
+				inDouble = false
+			} else {
+				cur = append(cur, r)
+			}
+		case r == '\'':
+			inSingle, hasToken = true, true
+		case r == '"':
+			inDouble, hasToken = true, true
+		case unicode.IsSpace(r):
+			if hasToken {
+				args = append(args, string(cur))
+				cur, hasToken = cur[:0], false
+			}
+		default:
+			cur = append(cur, r)
+			hasToken = true
+		}
+	}
+
+	if escaped {
+		return nil, errors.New("command ends with a trailing backslash")
+	}
+	if inSingle || inDouble {
+		return nil, errors.New("command has an unterminated quote")
+	}
+	if hasToken {
+		args = append(args, string(cur))
+	}
+	if len(args) == 0 {
+		return nil, errors.New("command is empty")
+	}
+	return args, nil
+}
+
+func runCmd() {
+	args, err := splitCommand(config.CFG.Command)
+	if err != nil {
+		log.Fatalf("invalid command %q: %s\r\n", config.CFG.Command, err)
+	}
+
+	c := exec.Command(args[0], args[1:]...) // #nosec G204 -- operator-provided command
 
 	c.Env = ptyEnv()
 
@@ -261,10 +327,26 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 	defaultScreen.AttachClient(client)
 }
 
+// themeHandler serves an optional xterm.js theme from <Path>/theme.json so the
+// viewer's palette can match the operator's terminal. Absent file -> defaults.
+func themeHandler(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-cache")
+
+	path := filepath.Join(config.CFG.Path, "theme.json")
+	data, err := os.ReadFile(filepath.Clean(path)) // #nosec G304 -- operator-controlled config dir
+	if err != nil {
+		_, _ = w.Write([]byte("{}"))
+		return
+	}
+	_, _ = w.Write(data)
+}
+
 func newMux() *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/ws", wsHandler)
 	mux.HandleFunc("/login", loginHandler)
+	mux.HandleFunc("/theme.json", themeHandler)
 	mux.HandleFunc("/", mainHandler)
 	return mux
 }

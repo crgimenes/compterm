@@ -11,6 +11,49 @@ import (
 	"github.com/crgimenes/compterm/config"
 )
 
+func TestSplitCommand(t *testing.T) {
+	tests := []struct {
+		name    string
+		in      string
+		want    []string
+		wantErr bool
+	}{
+		{name: "simple", in: "/bin/zsh", want: []string{"/bin/zsh"}},
+		{name: "args", in: "nvim -u NONE file.go", want: []string{"nvim", "-u", "NONE", "file.go"}},
+		{name: "double quoted spaces", in: `nvim "my file.go"`, want: []string{"nvim", "my file.go"}},
+		{name: "single quoted spaces", in: `sh -c 'echo a b'`, want: []string{"sh", "-c", "echo a b"}},
+		{name: "escaped space", in: `nvim my\ file.go`, want: []string{"nvim", `my file.go`}},
+		{name: "extra whitespace", in: "  ls   -la  ", want: []string{"ls", "-la"}},
+		{name: "empty arg", in: `a "" b`, want: []string{"a", "", "b"}},
+		{name: "unterminated quote", in: `nvim "oops`, wantErr: true},
+		{name: "trailing backslash", in: `nvim foo\`, wantErr: true},
+		{name: "empty", in: "   ", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := splitCommand(tt.in)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("splitCommand(%q) = %v, want error", tt.in, got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("splitCommand(%q): %v", tt.in, err)
+			}
+			if len(got) != len(tt.want) {
+				t.Fatalf("splitCommand(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+			for i := range got {
+				if got[i] != tt.want[i] {
+					t.Fatalf("splitCommand(%q) = %q, want %q", tt.in, got, tt.want)
+				}
+			}
+		})
+	}
+}
+
 func TestAuthorize(t *testing.T) {
 	const token = "s3cr3t"
 
