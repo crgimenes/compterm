@@ -25,13 +25,14 @@ Compterm accepts the following command-line flags:
 - `-listen` string: web/websocket listen address (default `0.0.0.0:2200`)
 - `-auth_token` string: viewer access token (empty disables authentication)
 - `-command` string: command to share (default `$SHELL`)
+- `-term` string: TERM for the shared command (default `xterm-256color`; empty inherits the host's)
 - `-path` string: path to configuration files (default `$HOME/.config/compterm`)
 - `-init` string: configuration file name (default `init.filo`)
 - `-ignore_pid`: ignore the COMPTERM pid guard
 
 It also recognizes the matching environment variables: `COMPTERM_LISTEN`,
-`COMPTERM_AUTH_TOKEN`, `COMPTERM_COMMAND`, `COMPTERM_PATH`, `COMPTERM_INIT_FILE`,
-and `COMPTERM_IGNORE_PID`.
+`COMPTERM_AUTH_TOKEN`, `COMPTERM_COMMAND`, `COMPTERM_TERM`, `COMPTERM_PATH`,
+`COMPTERM_INIT_FILE`, and `COMPTERM_IGNORE_PID`.
 
 Finally, Compterm reads a [Filo](https://github.com/crgimenes/filo)
 configuration file, looked up at `./init.filo` and then
@@ -61,9 +62,27 @@ Defaults are overridden by environment variables, then by command-line flags,
 and finally by the `init.filo` file (which takes precedence over all of them,
 except for `-path` and `-init`, which locate the file itself).
 
+# Terminal viewer
+
+Besides the browser, a session can be watched from a terminal:
+
+```bash
+go run ./cmd/client -url ws://localhost:2200/ws
+```
+
+Use `-token` (or `$COMPTERM_AUTH_TOKEN`) when the server requires
+authentication, and a `wss://` URL when connecting through a TLS reverse proxy.
+Press `q` or `Ctrl-C` to quit.
+
 # Contributing
 
 Contributions are welcome! Please refer to our contribution guidelines for details on how to contribute to this project.
+
+Before sending changes, run the verification gate:
+
+```bash
+make check   # go fix, gofmt, go vet, gosec, and the race-enabled tests
+```
 
 # License
 

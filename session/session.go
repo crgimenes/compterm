@@ -66,7 +66,7 @@ func (c *Control) Delete(w http.ResponseWriter, id string) {
 	delete(c.SessionDataMap, id)
 	c.mx.Unlock()
 
-	cookie := http.Cookie{
+	cookie := http.Cookie{ // #nosec G124 -- deletion cookie: empty value, no security attributes needed
 		Name:   c.cookieName,
 		Value:  "",
 		MaxAge: -1,
@@ -84,7 +84,7 @@ func (c *Control) Save(w http.ResponseWriter, r *http.Request, id string, sessio
 		secure = false
 	}
 
-	cookie := &http.Cookie{
+	cookie := &http.Cookie{ // #nosec G124 -- Secure is intentionally relaxed only on localhost (http dev)
 		Path:     "/",
 		Name:     c.cookieName,
 		Value:    id,

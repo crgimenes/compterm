@@ -20,6 +20,10 @@ import (
 // Screen broadcasts a single terminal to every attached client. It keeps an
 // authoritative in-memory terminal emulator so new clients can be brought to
 // the current state.
+//
+// mx guards Clients, Rows, and Columns. The emulator (mt) and the broadcast
+// Stream are internally synchronized, so they are used without holding mx. The
+// lock is never held while sending to a client.
 type Screen struct {
 	Columns int             `json:"columns"`
 	Rows    int             `json:"rows"`
@@ -27,6 +31,11 @@ type Screen struct {
 	Stream  *stream.Stream  `json:"-"`
 	mt      *mterm.Terminal `json:"-"`
 	mx      sync.Mutex      `json:"-"`
+
+	// writeMu serializes Write so the stateful clipboard filter is safe.
+	writeMu sync.Mutex      `json:"-"`
+	clip    clipboardFilter `json:"-"`
+	clipBuf []byte          `json:"-"`
 }
 
 type Client struct {
@@ -54,23 +63,57 @@ func New(rows, columns int) *Screen {
 // AttachClient attaches a client and brings it to the current screen state.
 func (s *Screen) AttachClient(c *Client) {
 	s.mx.Lock()
-	defer s.mx.Unlock()
-
-	if slices.Contains(s.Clients, c) {
-		s.updateToCurrentState(c)
-		return
+	if !slices.Contains(s.Clients, c) {
+		s.Clients = append(s.Clients, c)
 	}
+	s.mx.Unlock()
 
-	s.Clients = append(s.Clients, c)
 	s.updateToCurrentState(c)
 }
 
-func (s *Screen) removeAttachedClient(c *Client) {
-	for i, ac := range s.Clients {
-		if ac == c {
-			s.Clients = append(s.Clients[:i], s.Clients[i+1:]...)
-			return
+// size returns the current dimensions under the lock.
+func (s *Screen) size() (rows, columns int) {
+	s.mx.Lock()
+	defer s.mx.Unlock()
+	return s.Rows, s.Columns
+}
+
+// snapshotClients returns a copy of the attached clients so the lock is not
+// held while sending.
+func (s *Screen) snapshotClients() []*Client {
+	s.mx.Lock()
+	defer s.mx.Unlock()
+	return slices.Clone(s.Clients)
+}
+
+// removeClients detaches the given clients in a single locked pass.
+func (s *Screen) removeClients(dead []*Client) {
+	s.mx.Lock()
+	defer s.mx.Unlock()
+	s.Clients = slices.DeleteFunc(s.Clients, func(c *Client) bool {
+		return slices.Contains(dead, c)
+	})
+}
+
+// broadcast sends a framed message to every attached client and detaches the
+// ones that are closed or fail to receive it.
+func (s *Screen) broadcast(prefix byte, p []byte) {
+	var dead []*Client
+
+	for _, c := range s.snapshotClients() {
+		if c.IsClosed() {
+			dead = append(dead, c)
+			continue
 		}
+		if err := c.Send(prefix, p); err != nil {
+			log.Printf("error writing to websocket: %s\r\n", err)
+			c.Close()
+			dead = append(dead, c)
+		}
+	}
+
+	if len(dead) > 0 {
+		s.removeClients(dead)
 	}
 }
 
@@ -86,44 +129,32 @@ func (s *Screen) writeToAttachedClients() {
 			log.Printf("error reading from byte stream: %s\r\n", err)
 		}
 
-		func() {
-			s.mx.Lock()
-			defer s.mx.Unlock()
-			for _, c := range s.Clients {
-				select {
-				case <-c.done:
-					s.removeAttachedClient(c)
-					continue
-				default:
-					err = c.Send(constants.MSG, msg[:n])
-					if err != nil {
-						log.Printf("error writing to websocket: %s\r\n", err)
-						c.Close()
-						s.removeAttachedClient(c)
-						continue
-					}
-				}
-			}
-		}()
+		s.broadcast(constants.MSG, msg[:n])
 	}
 }
 
-// Write implements io.Writer: it feeds the emulator and the broadcast stream.
+// Write implements io.Writer: it strips the host's clipboard sequences (OSC 52)
+// and feeds the cleaned bytes to both the emulator and the broadcast stream, so
+// neither the live deltas nor the snapshot can carry the host's clipboard.
 func (s *Screen) Write(p []byte) (n int, err error) {
-	_, _ = s.mt.Write(p)
-	_, _ = s.Stream.Write(p)
+	s.writeMu.Lock()
+	s.clipBuf = s.clip.filter(s.clipBuf[:0], p)
+	_, _ = s.mt.Write(s.clipBuf)
+	_, _ = s.Stream.Write(s.clipBuf)
+	s.writeMu.Unlock()
 	return len(p), nil
 }
 
 func (s *Screen) updateToCurrentState(c *Client) {
+	rows, columns := s.size()
 	crows, ccolumns := s.CursorPos()
 	msg := s.GetScreenAsANSI()
 
 	_ = c.Send(constants.RESIZE,
-		fmt.Appendf(nil, "%d:%d", s.Rows, s.Columns))
+		fmt.Appendf(nil, "%d:%d", rows, columns))
 
 	m := fmt.Sprintf("\033[8;%d;%dt\033[0;0H%s\033[%d;%dH",
-		s.Rows, s.Columns, msg, crows+1, ccolumns+1)
+		rows, columns, msg, crows+1, ccolumns+1)
 
 	_ = c.Send(constants.MSG, []byte(m))
 }
@@ -132,38 +163,20 @@ func (s *Screen) Read(p []byte) (n int, err error) {
 	return s.Stream.Read(p)
 }
 
-func (s *Screen) Send(prefix byte, p []byte) (err error) {
-	for _, c := range s.Clients {
-		err = c.Send(prefix, p)
-		if err != nil {
-			log.Printf("error writing to websocket: %s\r\n", err)
-			c.Close()
-			s.removeAttachedClient(c)
-			continue
-		}
-	}
-
-	return nil
-}
-
 // Resize resizes the screen and notifies attached clients.
 func (s *Screen) Resize(rows, columns int) {
 	s.mx.Lock()
-	defer s.mx.Unlock()
 	if rows == s.Rows && columns == s.Columns {
+		s.mx.Unlock()
 		return
 	}
-
 	s.Rows = rows
 	s.Columns = columns
 	s.mt.Resize(rows, columns)
+	s.mx.Unlock()
 
-	_, _ = s.Write(fmt.Appendf(nil, "\033[8;%d;%dt", s.Rows, s.Columns))
-	_ = s.Send(constants.RESIZE, fmt.Appendf(nil, "%d:%d", rows, columns))
-}
-
-func (s *Screen) Size() (rows, columns int) {
-	return s.Rows, s.Columns
+	_, _ = s.Write(fmt.Appendf(nil, "\033[8;%d;%dt", rows, columns))
+	s.broadcast(constants.RESIZE, fmt.Appendf(nil, "%d:%d", rows, columns))
 }
 
 // GetScreenAsANSI returns the current screen content as ANSI.
@@ -176,14 +189,6 @@ func (s *Screen) CursorPos() (rows, columns int) {
 	return s.mt.CursorPos()
 }
 
-// ListConnectedClients returns the attached clients.
-func (s *Screen) ListConnectedClients() []*Client {
-	s.mx.Lock()
-	defer s.mx.Unlock()
-
-	return s.Clients
-}
-
 func NewClient(conn *websocket.Conn) *Client {
 	c := &Client{
 		bs:      stream.New(),
@@ -193,7 +198,7 @@ func NewClient(conn *websocket.Conn) *Client {
 	}
 
 	go c.writeLoop()
-	go c.drainInput()
+	go c.rejectInput()
 
 	return c
 }
@@ -238,9 +243,10 @@ func (c *Client) Send(prefix byte, p []byte) (err error) {
 	return nil
 }
 
-// drainInput reads and discards client messages; compterm is read-only, so the
-// only purpose is to detect disconnects.
-func (c *Client) drainInput() {
+// rejectInput enforces compterm's one-way contract. A viewer must never send
+// anything to the host, so the connection is read only to detect disconnects
+// and to drop any client that tries to send data.
+func (c *Client) rejectInput() {
 	for {
 		select {
 		case <-c.done:
@@ -257,6 +263,11 @@ func (c *Client) drainInput() {
 				c.Close()
 				return
 			}
+
+			// The stream is one-way; a client that sends data is dropped.
+			log.Printf("client %q sent data on a read-only connection; closing\r\n", c.SessionID)
+			c.Close()
+			return
 		}
 	}
 }

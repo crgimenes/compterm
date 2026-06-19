@@ -36,14 +36,32 @@ var (
 	mx            sync.Mutex
 )
 
+// ptyEnv builds the environment for the shared command. When a TERM is
+// configured it overrides any inherited TERM and drops COLORTERM, so the shared
+// session presents a consistent terminal type and programs emit colors the
+// browser renders correctly (instead of e.g. colon-form truecolor).
+func ptyEnv() []string {
+	env := os.Environ()
+	if config.CFG.Term != "" {
+		filtered := make([]string, 0, len(env)+2)
+		for _, kv := range env {
+			if strings.HasPrefix(kv, "TERM=") || strings.HasPrefix(kv, "COLORTERM=") {
+				continue
+			}
+			filtered = append(filtered, kv)
+		}
+		env = append(filtered, "TERM="+config.CFG.Term)
+	}
+	return append(env, fmt.Sprintf("COMPTERM=%d", os.Getpid()))
+}
+
 func runCmd() {
 	var err error
 
 	cmd := strings.Split(config.CFG.Command, " ")
 	c := exec.Command(cmd[0], cmd[1:]...) // #nosec G204 -- operator-provided command
 
-	c.Env = os.Environ()
-	c.Env = append(c.Env, fmt.Sprintf("COMPTERM=%d", os.Getpid()))
+	c.Env = ptyEnv()
 
 	// Start the command with a pty.
 	mx.Lock()

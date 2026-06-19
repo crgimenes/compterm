@@ -19,6 +19,7 @@ type Config struct {
 	Listen    string
 	Command   string
 	AuthToken string
+	Term      string
 	Path      string
 	InitFile  string
 }
@@ -30,6 +31,10 @@ var CFG = &Config{}
 const (
 	defaultListen   = "0.0.0.0:2200"
 	defaultInitFile = "init.filo"
+	// defaultTerm normalizes the shared session to a widely supported terminal
+	// type so colors render consistently in the browser. Empty inherits the
+	// host's TERM (not recommended: breaks colors outside tmux).
+	defaultTerm = "xterm-256color"
 )
 
 // defaultInitFilo is written to the configuration directory on first run. It
@@ -45,6 +50,7 @@ const defaultInitFilo = `;; init.filo — compterm configuration
 ;; (set Listen "0.0.0.0:2200") ; web/websocket listen address
 ;; (set AuthToken "")          ; viewer access token (empty disables auth)
 ;; (set Command "/bin/zsh")    ; command to share (defaults to $SHELL)
+;; (set Term "xterm-256color") ; TERM for the shared command (empty = inherit)
 ;; (set IgnorePID #f)          ; ignore the COMPTERM pid guard
 ;;
 ;; getEnv reads an environment variable, falling back to the second argument:
@@ -82,6 +88,7 @@ func applyDefaultsAndEnv(c *Config) error {
 	c.Listen = envOr("COMPTERM_LISTEN", defaultListen)
 	c.AuthToken = os.Getenv("COMPTERM_AUTH_TOKEN")
 	c.Command = envOr("COMPTERM_COMMAND", os.Getenv("SHELL"))
+	c.Term = envOr("COMPTERM_TERM", defaultTerm)
 	c.Path = envOr("COMPTERM_PATH", defaultPath)
 	c.InitFile = envOr("COMPTERM_INIT_FILE", defaultInitFile)
 	c.IgnorePID = os.Getenv("COMPTERM_IGNORE_PID") == "true"
@@ -93,6 +100,7 @@ func parseFlags(c *Config) {
 	flag.StringVar(&c.Listen, "listen", c.Listen, "web/websocket listen address")
 	flag.StringVar(&c.AuthToken, "auth_token", c.AuthToken, "viewer access token (empty disables authentication)")
 	flag.StringVar(&c.Command, "command", c.Command, "command to share (defaults to $SHELL)")
+	flag.StringVar(&c.Term, "term", c.Term, "TERM for the shared command (empty inherits the host's)")
 	flag.StringVar(&c.Path, "path", c.Path, "path to configuration files")
 	flag.StringVar(&c.InitFile, "init", c.InitFile, "configuration file name")
 	flag.BoolVar(&c.IgnorePID, "ignore_pid", c.IgnorePID, "ignore the COMPTERM pid guard")
@@ -125,6 +133,7 @@ func loadFilo(c *Config) error {
 	f.SetGlobal("Listen", c.Listen)
 	f.SetGlobal("AuthToken", c.AuthToken)
 	f.SetGlobal("Command", c.Command)
+	f.SetGlobal("Term", c.Term)
 	f.SetGlobal("IgnorePID", c.IgnorePID)
 	f.SetGlobal("Path", c.Path)
 	f.SetGlobal("InitFile", c.InitFile)
@@ -144,6 +153,7 @@ func loadFilo(c *Config) error {
 	c.Listen = filoString(f, "Listen", c.Listen)
 	c.AuthToken = filoString(f, "AuthToken", c.AuthToken)
 	c.Command = filoString(f, "Command", c.Command)
+	c.Term = filoString(f, "Term", c.Term)
 	c.IgnorePID = filoBool(f, "IgnorePID", c.IgnorePID)
 
 	return nil
@@ -265,7 +275,7 @@ func usage() {
 	p("Options:\n")
 	flag.PrintDefaults()
 	p("\nEnvironment variables (override defaults, overridden by flags and the config file):\n")
-	p("    COMPTERM_LISTEN, COMPTERM_AUTH_TOKEN, COMPTERM_COMMAND,\n")
+	p("    COMPTERM_LISTEN, COMPTERM_AUTH_TOKEN, COMPTERM_COMMAND, COMPTERM_TERM,\n")
 	p("    COMPTERM_PATH, COMPTERM_INIT_FILE, COMPTERM_IGNORE_PID\n")
 	p("\nConfiguration file (Filo):\n")
 	p("    Looked up at ./init.filo, then $COMPTERM_PATH/init.filo.\n")

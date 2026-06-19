@@ -7,6 +7,10 @@ const MSG = 0x1;
 const RESIZE = 0x2;
 
 const termOptions = {
+  // compterm is strictly one-way: the viewer never sends anything back, so the
+  // terminal accepts no input.
+  disableStdin: true,
+  cursorBlink: false,
   fontSize: 20,
   fontFamily: 'terminal,courier-new,courier,monospace',
   macOptionClickForcesSelection: true,
@@ -41,7 +45,6 @@ const imageAddon = new ImageAddon();
 terminal.loadAddon(imageAddon);
 
 terminal.open(document.getElementById('terminal'));
-terminal.focus();
 
 const progress = '/-\\|';
 let progressIndex = 0;
@@ -145,8 +148,7 @@ function connectWS() {
     setTimeout(connectWS, 1000);
   };
 
-  //terminal.onKey(({ key }) => ws.send(key));
-  terminal.onData((data) => ws.send(data));
+  // No terminal.onData handler: the viewer never sends input back to the host.
   terminal.onTitleChange((title) => document.title = title);
   terminal.onerror = (err) => console.log(err);
 }
