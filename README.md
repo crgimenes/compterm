@@ -101,6 +101,31 @@ fields:
 { "background": "#1e1e2e", "foreground": "#cdd6f4", "red": "#f38ba8" }
 ```
 
+# Inline images
+
+The browser viewer understands the iTerm2 inline-image escape (`OSC 1337 ;
+File=`), so a program in the shared session can draw a picture straight into the
+terminal:
+
+```bash
+printf '\033]1337;File=inline=1:%s\a\n' "$(base64 < image.png)"
+```
+
+The image is auto-sized from its own dimensions, scaled by `1 / devicePixelRatio`
+by default (one screen pixel per image pixel, as iTerm2 does on a Retina
+display). Because the browser's font may differ from your terminal's, images can
+look larger or smaller in the browser than in your terminal; set `imageScale` in
+`theme.json` to correct it — e.g. `{ "imageScale": 0.36 }` renders images at 36%
+of their natural size. Per-image `width=`/`height=` (cells, `px`, or `%`)
+override the auto-size. As in iTerm2 the cursor ends at the image's
+bottom-right, so text after the image lines up with its base and the next line
+feed continues below it.
+
+Images are part of the live stream, not the screen snapshot: viewers connected
+when the image is emitted see it, but someone who joins afterwards only sees it
+the next time it is sent — the same way a real terminal keeps images in
+scrollback rather than on a redrawable screen.
+
 # Contributing
 
 Contributions are welcome! Please refer to our contribution guidelines for details on how to contribute to this project.

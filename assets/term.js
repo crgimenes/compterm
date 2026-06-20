@@ -1,6 +1,6 @@
 import { Terminal } from '@xterm/xterm';
 import { WebLinksAddon } from '@xterm/addon-web-links';
-import { ImageAddon } from '@xterm/addon-image';
+import { registerIIP, makeReserver } from './iip.js';
 
 const MSG = 0x1;
 const RESIZE = 0x2;
@@ -11,6 +11,8 @@ const termOptions = {
   // compterm is strictly one-way: the viewer never sends anything back, so the
   // terminal accepts no input.
   disableStdin: true,
+  // the decoration API used to render inline images (OSC 1337) is proposed.
+  allowProposedApi: true,
   cursorBlink: false,
   fontSize: 20,
   fontFamily: 'terminal,courier-new,courier,monospace',
@@ -40,6 +42,9 @@ const termOptions = {
 };
 
 let terminal;
+// reserveIIP appends the blank rows an inline image (OSC 1337) needs, so output
+// after it flows below the image instead of behind it.
+let reserveIIP = (b) => b;
 
 const progress = '/-\\|';
 let progressIndex = 0;
@@ -104,8 +109,9 @@ function connectWS() {
             case MSG:
               // pass raw bytes: xterm.js reassembles UTF-8 across writes, so a
               // multibyte glyph split across frames (common with image ANSI)
-              // doesn't turn into replacement characters.
-              terminal.write(payload);
+              // doesn't turn into replacement characters. reserveIIP inserts the
+              // blank rows an inline image occupies before xterm parses them.
+              terminal.write(reserveIIP(payload));
               break;
             case RESIZE: {
               const [cols, rows] = decoder.decode(payload).split(':');
@@ -152,12 +158,18 @@ async function loadTheme() {
 }
 
 window.onload = async () => {
-  termOptions.theme = Object.assign({}, termOptions.theme, await loadTheme());
+  const cfg = await loadTheme();
+  // imageScale is a display setting, not an xterm theme field: pull it out
+  // before merging the rest into the terminal theme.
+  const imageScale = typeof cfg.imageScale === 'number' ? cfg.imageScale : undefined;
+  delete cfg.imageScale;
+  termOptions.theme = Object.assign({}, termOptions.theme, cfg);
 
   terminal = new Terminal(termOptions);
   terminal.loadAddon(new WebLinksAddon());
-  terminal.loadAddon(new ImageAddon());
   terminal.open(document.getElementById('terminal'));
+  registerIIP(terminal, imageScale);
+  reserveIIP = makeReserver(terminal, imageScale);
 
   connectWS();
 };
