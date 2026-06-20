@@ -8,6 +8,7 @@ import (
 	"slices"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/coder/websocket"
 
@@ -120,9 +121,10 @@ func (s *Screen) broadcast(prefix byte, p []byte) {
 }
 
 func (s *Screen) writeToAttachedClients() {
-	msg := make([]byte, constants.BufferSize)
+	buf := make([]byte, constants.BufferSize)
+	carry := 0 // bytes of an incomplete trailing UTF-8 rune, held at buf's front
 	for {
-		n, err := s.Read(msg)
+		n, err := s.Read(buf[carry:])
 		if err != nil {
 			if err == io.EOF {
 				time.Sleep(100 * time.Millisecond)
@@ -131,8 +133,32 @@ func (s *Screen) writeToAttachedClients() {
 			log.Printf("error reading from byte stream: %s\r\n", err)
 		}
 
-		s.broadcast(constants.MSG, msg[:n])
+		total := carry + n
+		// Never end a frame mid-rune: hold back an incomplete trailing UTF-8
+		// sequence so every client receives whole characters (image ANSI, which
+		// is dense with multibyte glyphs, would otherwise split into U+FFFD).
+		good := completeRunePrefix(buf[:total])
+		if good > 0 {
+			s.broadcast(constants.MSG, buf[:good])
+		}
+		carry = total - good
+		copy(buf, buf[good:total])
 	}
+}
+
+// completeRunePrefix returns the length of the longest prefix of b that ends on
+// a UTF-8 rune boundary, excluding a trailing incomplete multibyte sequence.
+func completeRunePrefix(b []byte) int {
+	for i := len(b) - 1; i >= 0 && len(b)-i <= utf8.UTFMax; i-- {
+		if !utf8.RuneStart(b[i]) {
+			continue
+		}
+		if utf8.FullRune(b[i:]) {
+			return len(b)
+		}
+		return i
+	}
+	return len(b)
 }
 
 // Write implements io.Writer. It strips the host's clipboard sequences (OSC 52)

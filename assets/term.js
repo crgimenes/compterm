@@ -102,7 +102,10 @@ function connectWS() {
           const { command, payloadLength, payload } = decodeProtocol(array);
           switch (command) {
             case MSG:
-              terminal.write(decoder.decode(payload));
+              // pass raw bytes: xterm.js reassembles UTF-8 across writes, so a
+              // multibyte glyph split across frames (common with image ANSI)
+              // doesn't turn into replacement characters.
+              terminal.write(payload);
               break;
             case RESIZE: {
               const [cols, rows] = decoder.decode(payload).split(':');
