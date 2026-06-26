@@ -257,7 +257,7 @@ func (c *Client) IsClosed() bool {
 func (c *Client) Send(prefix byte, p []byte) (err error) {
 	c.mx.Lock()
 	defer c.mx.Unlock()
-	ln, err := protocol.Encode(c.outbuff, p, prefix, 0)
+	ln, err := protocol.Encode(c.outbuff, p, prefix)
 	if err != nil {
 		return err
 	}

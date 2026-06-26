@@ -3,8 +3,6 @@ package mterm
 import (
 	"bytes"
 	"fmt"
-	"reflect"
-	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -24,9 +22,8 @@ type Terminal struct {
 
 	stateProc stateFn
 
-	Title      string
-	TabSize    int
-	cellUpdate int
+	Title   string
+	TabSize int
 
 	// to handle CSIs CSIu
 	saveCursor   [2]int
@@ -61,14 +58,6 @@ func New(rows, cols int) *Terminal {
 	}
 }
 
-// Cells returns a copy of the underlying screen cells
-func (t *Terminal) Cells() []Cell {
-	t.mux.Lock()
-	defer t.mux.Unlock()
-
-	return slices.Clone(t.screens[t.screenTarget].cells)
-}
-
 type EscapeError struct {
 	Err    error
 	Offset int
@@ -98,14 +87,6 @@ func (t *Terminal) Write(p []byte) (int, error) {
 		}
 	}
 	return len(p), nil
-}
-
-// Put processes a single rune in the terminal
-func (t *Terminal) Put(r rune) error {
-	t.mux.Lock()
-	defer t.mux.Unlock()
-
-	return t.put(r)
 }
 
 func (t *Terminal) Resize(rows, cols int) {
@@ -142,16 +123,7 @@ func (t *Terminal) GetScreenAsAnsi() []byte {
 	t.mux.Lock()
 	defer t.mux.Unlock()
 
-	return t.getScreenAsAnsi(false)
-}
-
-// Updates returns a sequence number that is incremented every time the screen
-// cells are updated
-func (t *Terminal) Updates() int {
-	t.mux.Lock()
-	defer t.mux.Unlock()
-
-	return t.cellUpdate
+	return t.getScreenAsAnsi()
 }
 
 // GetCursorPos returns the current cursor position in lines, cols
@@ -209,7 +181,6 @@ func (t *Terminal) nextLine() {
 		region := t.screenScrollRegion()
 		if len(region)/cols < s.backlogSize {
 			region = append(region, make([]Cell, cols)...)
-			t.cellUpdate++
 		}
 		copy(region, region[cols:])
 		fill(region[len(region)-cols:], Cell{})
@@ -270,7 +241,6 @@ func (t *Terminal) normal(r rune) (stateFn, error) {
 		}
 		screen[offs] = cl
 		s.cursor[1]++
-		t.cellUpdate++
 	}
 	return nil, nil
 }
@@ -465,14 +435,11 @@ func (t *Terminal) csi() stateFn {
 			case 0: // clear from cursor to end
 				off := clamp(s.cursor[1]+s.cursor[0]*cols, 0, len(screen))
 				fill(screen[off:], Cell{SGRState: t.cstate})
-				t.cellUpdate++
 			case 1: // clear from beginning to cursor
 				off := clamp(s.cursor[1]+s.cursor[0]*cols, 0, len(screen))
 				fill(screen[:off], Cell{SGRState: t.cstate})
-				t.cellUpdate++
 			case 2: // clear everything
 				fill(screen, Cell{SGRState: t.cstate})
-				t.cellUpdate++
 			case 3: // clear scrollback
 				if t.screenTarget == 1 {
 					break
@@ -482,7 +449,6 @@ func (t *Terminal) csi() stateFn {
 				}
 				copy(t.screens[0].cells, screen)
 				t.screens[0].cells = t.screens[0].cells[:rows*cols]
-				t.cellUpdate++
 			}
 		case 'K': // Erase in Line
 			n := 0
@@ -496,13 +462,10 @@ func (t *Terminal) csi() stateFn {
 			switch n {
 			case 0: // clear from cursor to end
 				fill(line[s.cursor[1]:], Cell{SGRState: t.cstate})
-				t.cellUpdate++
 			case 1: // clear from beginning to cursor
 				fill(line[:s.cursor[1]], Cell{SGRState: t.cstate})
-				t.cellUpdate++
 			case 2: // clear everything
 				fill(line, Cell{SGRState: t.cstate})
-				t.cellUpdate++
 			}
 		case 'M': // Delete lines, it will move the rest of the lines up
 			n := 1
@@ -515,7 +478,6 @@ func (t *Terminal) csi() stateFn {
 			eoff := clamp(loff+n*cols, 0, len(region))
 			copy(region[loff:], region[eoff:])
 			fill(region[len(region)-n*cols:], Cell{})
-			t.cellUpdate++
 		case 'P': // Delete chars in line it will move the rest of the line to the left
 			n := 1
 			getParams(p, &n)
@@ -533,7 +495,6 @@ func (t *Terminal) csi() stateFn {
 			off := s.cursor[1] + s.cursor[0]*cols
 			end := min(off+n, len(screen))
 			fill(screen[off:end], Cell{SGRState: t.cstate})
-			t.cellUpdate++
 		case 'L': // Insert lines, it will push lines forward
 			n := 1
 			getParams(p, &n)
@@ -546,7 +507,6 @@ func (t *Terminal) csi() stateFn {
 			dup := slices.Clone(region)
 			copy(region[eoff:], dup[loff:])
 			fill(region[loff:eoff], Cell{SGRState: t.cstate})
-			t.cellUpdate++
 		case '@':
 			// TODO: {lpf} (comment by copilot: Insert blank characters (SP) (default = 1))
 		// SGR
@@ -667,7 +627,7 @@ func (t *Terminal) screenView() []Cell {
 	return s.cells[start:end]
 }
 
-func (t *Terminal) getScreenAsAnsi(cursor bool) []byte {
+func (t *Terminal) getScreenAsAnsi() []byte {
 	s := t.screens[t.screenTarget]
 	cols := s.size[1]
 
@@ -737,30 +697,8 @@ func (t *Terminal) getScreenAsAnsi(cursor bool) []byte {
 			}
 			fmt.Fprintf(buf, "m")
 		}
-		r := max(c.Char, ' ')
-
-		if cursor && x == s.cursor[1] && y == s.cursor[0] {
-			fmt.Fprintf(buf, "\033[7m%c\033[27m", r)
-			x += 1
-			lastState = SGRState{}
-			continue
-		}
-		buf.WriteRune(r)
+		buf.WriteRune(max(c.Char, ' '))
 		x += 1
 	}
 	return buf.Bytes()
-}
-
-// DBGStateFn returns the state func name
-func (t *Terminal) DBGStateFn() string {
-	fi := runtime.FuncForPC(reflect.ValueOf(t.stateProc).Pointer())
-	return fi.Name()
-}
-
-// DBG Similar to GetScreenAsAnsi but with a cursor
-func (t *Terminal) DBG() []byte {
-	t.mux.Lock()
-	defer t.mux.Unlock()
-
-	return t.getScreenAsAnsi(true)
 }

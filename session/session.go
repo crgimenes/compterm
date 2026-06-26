@@ -2,7 +2,6 @@ package session
 
 import (
 	"crypto/rand"
-	"maps"
 	"net/http"
 	"strings"
 	"sync"
@@ -138,11 +137,4 @@ func RandomID() string {
 		b[i] = charset[b[i]%lenCharset]
 	}
 	return string(b)
-}
-
-func (c *Control) List() map[string]SessionData {
-	c.mx.Lock()
-	defer c.mx.Unlock()
-
-	return maps.Clone(c.SessionDataMap)
 }

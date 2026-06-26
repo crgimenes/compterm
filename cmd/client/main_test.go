@@ -11,7 +11,7 @@ import (
 func TestRenderFrames(t *testing.T) {
 	enc := make([]byte, constants.BufferSize)
 	frame := func(cmd byte, payload string) []byte {
-		n, err := protocol.Encode(enc, []byte(payload), cmd, 0)
+		n, err := protocol.Encode(enc, []byte(payload), cmd)
 		if err != nil {
 			t.Fatalf("encode: %v", err)
 		}

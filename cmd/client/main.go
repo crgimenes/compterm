@@ -48,7 +48,7 @@ func main() {
 	// Reconnect until the user quits.
 	for {
 		err := stream(target)
-		fmt.Fprintf(os.Stdout, "\r\n\033[33mdisconnected: %v — reconnecting...\033[0m\r\n", err)
+		_, _ = fmt.Fprintf(os.Stdout, "\r\n\033[33mdisconnected: %v — reconnecting...\033[0m\r\n", err)
 		time.Sleep(time.Second)
 	}
 }
@@ -115,7 +115,7 @@ func stream(wsURL string) error {
 	if err != nil {
 		return err
 	}
-	defer c.CloseNow()
+	defer func() { _ = c.CloseNow() }()
 	c.SetReadLimit(-1)
 
 	buf := make([]byte, constants.BufferSize)
@@ -134,14 +134,14 @@ func stream(wsURL string) error {
 // escape is already part of the MSG stream — so they are skipped.
 func renderFrames(buf, data []byte, out io.Writer) {
 	for len(data) > 0 {
-		cmd, n, _, err := protocol.Decode(buf, data)
+		cmd, n, err := protocol.Decode(buf, data)
 		if err != nil {
 			return
 		}
 		if cmd == constants.MSG {
 			_, _ = out.Write(buf[:n])
 		}
-		advance := n + 11 // header (7) + payload (n) + checksum (4)
+		advance := n + protocol.Overhead
 		if advance > len(data) {
 			return
 		}

@@ -1,104 +1,83 @@
-// Protocol package implements a simple protocol for
-// sending and receiving data.
+// Protocol package implements a simple framing protocol for sending and
+// receiving data.
 //
-// Protocol format: ABBCCCCDDD...DDDFFFF
+// Frame format: A CCCC DDD...DDD FFFF
 // Where:
 // A: command byte
-// B: counter (2 bytes, big endian) optional used to debug and validate package order
 // C: payload length (32 bits, big endian)
 // D: payload (array of bytes)
 // F: checksum (FNV-1a, 32 bits, big endian)
 //
-// The checksum is calculated over the command byte, counter, payload length, and the data itself.
+// The checksum covers the command byte, payload length, and the data itself.
 package protocol
 
 import (
 	"encoding/binary"
 	"errors"
-	"hash"
-	"hash/fnv"
-	"sync"
 
 	"github.com/crgimenes/compterm/constants"
 )
 
-const (
-	MaxPackageSize = constants.BufferSize + 11 // max package size
-)
+// Overhead is the number of framing bytes around a payload:
+// command (1) + length (4) + checksum (4).
+const Overhead = 9
+
+// MaxPackageSize is the largest a whole frame can be.
+const MaxPackageSize = constants.BufferSize + Overhead
 
 var (
 	ErrInvalidSize     = errors.New("invalid size")
 	ErrInvalidChecksum = errors.New("invalid checksum")
-
-	// hashPool is a pool of hash.Hash32 objects.
-	hashPool = sync.Pool{
-		New: func() any {
-			return fnv.New32a()
-		},
-	}
 )
 
-// getHash returns a hash.Hash32 from the pool.
-func getHash() hash.Hash32 {
-	return hashPool.Get().(hash.Hash32)
-}
-
-// putHash returns a hash.Hash32 to the pool.
-func putHash(h hash.Hash32) {
-	hashPool.Put(h)
-}
-
-// checksum calculates the FNV-1a checksum of the given data.
+// checksum returns the FNV-1a 32-bit hash of data.
 func checksum(data []byte) uint32 {
-	hash := getHash()
-	defer putHash(hash)
-	hash.Reset()
-	_, _ = hash.Write(data)
-	return hash.Sum32()
+	const (
+		offset = 2166136261
+		prime  = 16777619
+	)
+	h := uint32(offset)
+	for _, b := range data {
+		h ^= uint32(b)
+		h *= prime
+	}
+	return h
 }
 
-// Encode encodes the source data into the destination buffer
-// using the specified command.
-// It returns the number of bytes written and an error, if any.
-func Encode(dest, src []byte, cmd byte, counter uint16) (int, error) {
+// Encode frames src into dest with the given command and returns the frame
+// length.
+func Encode(dest, src []byte, cmd byte) (int, error) {
 	lenData := len(src)
 	if lenData > MaxPackageSize {
 		return 0, ErrInvalidSize
 	}
-	if len(dest) < lenData+11 {
+	if len(dest) < lenData+Overhead {
 		return 0, ErrInvalidSize
 	}
 	dest[0] = cmd
-	binary.BigEndian.PutUint16(dest[1:], counter)
-	binary.BigEndian.PutUint32(dest[3:], uint32(lenData))
-	copy(dest[7:], src)
-	checksum := checksum(dest[0 : 7+lenData])
-	binary.BigEndian.PutUint32(dest[7+lenData:], checksum)
-	n := lenData + 11
-	return n, nil
+	binary.BigEndian.PutUint32(dest[1:], uint32(lenData))
+	copy(dest[5:], src)
+	binary.BigEndian.PutUint32(dest[5+lenData:], checksum(dest[0:5+lenData]))
+	return lenData + Overhead, nil
 }
 
-// Decode decodes the source buffer into the destination buffer.
-// It returns the command byte, the number of bytes read, the
-// counter value, and an error, if any.
-// command byte + counter + data length + checksum length = 11 bytes
-func Decode(dest, src []byte) (cmd byte, n int, counter uint16, err error) {
-	if len(src) < 11 {
-		return 0, 0, 0, ErrInvalidSize
+// Decode reads one frame from src into dest, returning the command byte and the
+// payload length.
+func Decode(dest, src []byte) (cmd byte, n int, err error) {
+	if len(src) < Overhead {
+		return 0, 0, ErrInvalidSize
 	}
-	lenData := int(binary.BigEndian.Uint32(src[3:]))
+	lenData := int(binary.BigEndian.Uint32(src[1:]))
 	if lenData > constants.BufferSize {
-		return 0, 0, 0, ErrInvalidSize
+		return 0, 0, ErrInvalidSize
 	}
-	if len(src) < lenData+11 {
-		return 0, 0, 0, ErrInvalidSize
+	if len(src) < lenData+Overhead {
+		return 0, 0, ErrInvalidSize
 	}
-	counter = binary.BigEndian.Uint16(src[1:])
-	expectedChecksum := binary.BigEndian.Uint32(src[7+lenData:])
-	calculatedChecksum := checksum(src[0 : 7+lenData])
-	if expectedChecksum != calculatedChecksum {
-		return 0, 0, 0, ErrInvalidChecksum
+	expected := binary.BigEndian.Uint32(src[5+lenData:])
+	if expected != checksum(src[0:5+lenData]) {
+		return 0, 0, ErrInvalidChecksum
 	}
-	copy(dest, src[7:7+lenData])
-	return src[0], lenData, counter, nil
+	copy(dest, src[5:5+lenData])
+	return src[0], lenData, nil
 }

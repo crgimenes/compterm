@@ -59,30 +59,29 @@ function fnv1a(bytes) {
   return hash >>> 0;
 }
 
-// decodeProtocol decodes one frame [cmd][counter][len][payload][fnv32] and
-// verifies its checksum, throwing on a short, truncated, or corrupt frame.
+// decodeProtocol decodes one frame [cmd][len][payload][fnv32] and verifies its
+// checksum, throwing on a short, truncated, or corrupt frame.
 function decodeProtocol(buffer) {
-  if (buffer.length < 11) {
+  if (buffer.length < 9) {
     throw new Error('frame too short: ' + buffer.length);
   }
 
   const view = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
   const command = buffer[0];
-  const counter = view.getUint16(1, false);
-  const payloadLength = view.getUint32(3, false);
+  const payloadLength = view.getUint32(1, false);
 
-  if (7 + payloadLength + 4 > buffer.length) {
+  if (5 + payloadLength + 4 > buffer.length) {
     throw new Error('frame truncated');
   }
 
-  const expected = view.getUint32(7 + payloadLength, false);
-  const actual = fnv1a(buffer.subarray(0, 7 + payloadLength));
+  const expected = view.getUint32(5 + payloadLength, false);
+  const actual = fnv1a(buffer.subarray(0, 5 + payloadLength));
   if (expected !== actual) {
     throw new Error('checksum mismatch');
   }
 
-  const payload = buffer.subarray(7, 7 + payloadLength);
-  return { command, counter, payloadLength, payload };
+  const payload = buffer.subarray(5, 5 + payloadLength);
+  return { command, payloadLength, payload };
 }
 
 function connectWS() {
@@ -103,7 +102,7 @@ function connectWS() {
       let array = new Uint8Array(reader.result);
       try {
         // A single websocket message may carry several concatenated frames.
-        while (array.length >= 11) {
+        while (array.length >= 9) {
           const { command, payloadLength, payload } = decodeProtocol(array);
           switch (command) {
             case MSG:
@@ -121,7 +120,7 @@ function connectWS() {
             default:
               console.log('unknown command', command);
           }
-          array = array.subarray(payloadLength + 11);
+          array = array.subarray(payloadLength + 9);
         }
       } catch (err) {
         console.log('frame decode error:', err.message);

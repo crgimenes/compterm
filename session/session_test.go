@@ -39,7 +39,6 @@ func TestControlConcurrentAccess(t *testing.T) {
 			c.Save(w, r, id, sd)
 			_, _, _ = c.Get(r)
 			c.RemoveExpired()
-			_ = c.List()
 		})
 	}
 	wg.Wait()

@@ -67,22 +67,15 @@ function codesToString(codes) {
   return s;
 }
 
-// imageSize reads the pixel dimensions straight from the encoded bytes for the
-// formats whose header carries them up front (PNG and GIF), returning null when
-// the format is unknown so the caller falls back to explicit args or a default.
+// imageSize reads the pixel dimensions straight from a PNG's IHDR header,
+// returning null for other formats so the caller falls back to explicit args.
 function imageSize(b) {
-  // PNG: 8-byte signature, then IHDR with width/height as big-endian uint32.
   if (
     b.length >= 24 &&
     b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47
   ) {
     const dv = new DataView(b.buffer, b.byteOffset, b.byteLength);
     return { w: dv.getUint32(16), h: dv.getUint32(20) };
-  }
-  // GIF: "GIF8", then logical screen width/height as little-endian uint16.
-  if (b.length >= 10 && b[0] === 0x47 && b[1] === 0x49 && b[2] === 0x46) {
-    const dv = new DataView(b.buffer, b.byteOffset, b.byteLength);
-    return { w: dv.getUint16(6, true), h: dv.getUint16(8, true) };
   }
   return null;
 }
