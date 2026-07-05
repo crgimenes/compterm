@@ -140,3 +140,14 @@ make check   # go fix, gofmt, go vet, gosec, and the race-enabled tests
 
 This project is licensed under MIT, see the [LICENSE](LICENSE) file for details.
 
+
+---
+
+# More of my projects
+
+- [dbv](https://github.com/crgimenes/dbv): a PostgreSQL viewer for the terminal.
+- [neko](https://github.com/crgimenes/neko): the classic desktop cat chasing your pointer, in Go.
+- [filo](https://github.com/crgimenes/filo): a small scripting language safe to embed in Go programs.
+- [glaze](https://github.com/crgimenes/glaze): WebView desktop apps in Go, cgo-free.
+
+More at [github.com/crgimenes](https://github.com/crgimenes) and [crg.eti.br](https://crg.eti.br).
