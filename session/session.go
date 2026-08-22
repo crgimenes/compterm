@@ -78,7 +78,7 @@ func (c *Control) Save(w http.ResponseWriter, r *http.Request, id string, sessio
 
 	// if localhost accept all cookies (secure=false)
 	secure := true
-	lhost := strings.Split(r.Host, ":")[0]
+	lhost, _, _ := strings.Cut(r.Host, ":")
 	if lhost == "localhost" {
 		secure = false
 	}
