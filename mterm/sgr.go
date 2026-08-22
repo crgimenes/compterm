@@ -29,6 +29,13 @@ type SGRState struct {
 	Flags     uint8
 }
 
+// colorByte narrows an SGR parameter to a color component. The parameters come
+// off the terminal stream, so they are untrusted: \x1b[38;5;300m must land on a
+// valid color instead of wrapping around to a different one.
+func colorByte(v int) byte {
+	return byte(min(max(v, 0), 255))
+}
+
 // Set the Set based on CSI parameters
 func (s *SGRState) Set(p ...int) error {
 	if len(p) == 0 {
@@ -91,33 +98,33 @@ func (s *SGRState) Set(p ...int) error {
 		// FG 256 Colors
 		case c == 38 && len(sub) >= 3 && sub[1] == 5:
 			s.ColorType = s.ColorType&0b11111100 | Color256
-			s.FG[0] = byte(sub[2])
+			s.FG[0] = colorByte(sub[2])
 			i += 2
 		// BG 256 Colors
 		case c == 48 && len(sub) >= 3 && sub[1] == 5:
 			s.ColorType = s.ColorType&0b11110011 | (Color256 << 2)
-			s.BG[0] = byte(sub[2])
+			s.BG[0] = colorByte(sub[2])
 			i += 2
 		// FG 16M Colors
 		case c == 38 && len(sub) >= 5 && sub[1] == 2:
 			s.ColorType = s.ColorType&0b11111100 | Color16M
-			s.FG = Color{byte(sub[2]), byte(sub[3]), byte(sub[4])}
+			s.FG = Color{colorByte(sub[2]), colorByte(sub[3]), colorByte(sub[4])}
 			i += 4
 		// BG 16M Colors
 		case c == 48 && len(sub) >= 5 && sub[1] == 2:
 			s.ColorType = s.ColorType&0b11110011 | (Color16M << 2)
-			s.BG = Color{byte(sub[2]), byte(sub[3]), byte(sub[4])}
+			s.BG = Color{colorByte(sub[2]), colorByte(sub[3]), colorByte(sub[4])}
 			i += 4
 		// XXX: Experimental
 		// underline sample
 		// \x1b[58:2::173:216:230m
 		case c == 58 && len(sub) >= 3 && sub[1] == 5:
 			s.ColorType = s.ColorType&0b11001111 | (Color256 << 4)
-			s.UL[0] = byte(sub[2])
+			s.UL[0] = colorByte(sub[2])
 			i += 2
 		case c == 58 && len(sub) >= 5 && sub[1] == 2:
 			s.ColorType = s.ColorType&0b11001111 | (Color16M << 4)
-			s.UL = Color{byte(sub[2]), byte(sub[3]), byte(sub[4])}
+			s.UL = Color{colorByte(sub[2]), colorByte(sub[3]), colorByte(sub[4])}
 			i += 4
 		case c == 59: // Default underline color
 			s.ColorType &= 0b11001111

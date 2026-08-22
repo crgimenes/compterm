@@ -20,6 +20,10 @@ func TestSnapshotColorEncoding(t *testing.T) {
 		{"truecolor semicolon", "\033[38;2;173;216;230mR", ";38;2;173;216;230"},
 		{"truecolor colon with empty field", "\033[38:2::173:216:230mR", ";38;2;173;216;230"},
 		{"truecolor colon", "\033[38:2:173:216:230mR", ";38;2;173;216;230"},
+		// Out-of-range parameters come off the terminal stream; they must clamp
+		// to a valid component instead of wrapping into a different color.
+		{"256 out of range", "\033[38;5;300mR", ";38;5;255"},
+		{"truecolor out of range", "\033[38;2;300;0;0mR", ";38;2;255;0;0"},
 	}
 
 	for _, tt := range tests {
