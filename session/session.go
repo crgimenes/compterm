@@ -65,7 +65,10 @@ func (c *Control) Delete(w http.ResponseWriter, id string) {
 	delete(c.SessionDataMap, id)
 	c.mx.Unlock()
 
-	cookie := http.Cookie{ // #nosec G124 -- deletion cookie: empty value, no security attributes needed
+	// Path has to match the cookie Save set, or the browser keeps the one at
+	// "/" and the session survives the delete.
+	cookie := http.Cookie{ // #nosec G124 -- deletion cookie: the value is empty
+		Path:   "/",
 		Name:   c.cookieName,
 		Value:  "",
 		MaxAge: -1,
