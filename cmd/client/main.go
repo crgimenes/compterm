@@ -16,7 +16,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/crgimenes/compterm/constants"
 	"github.com/crgimenes/compterm/protocol"
 
 	"github.com/coder/websocket"
@@ -118,7 +117,7 @@ func stream(wsURL string) error {
 	defer func() { _ = c.CloseNow() }()
 	c.SetReadLimit(-1)
 
-	buf := make([]byte, constants.BufferSize)
+	buf := make([]byte, protocol.BufferSize)
 	for {
 		_, data, err := c.Read(ctx)
 		if err != nil {
@@ -138,7 +137,7 @@ func renderFrames(buf, data []byte, out io.Writer) {
 		if err != nil {
 			return
 		}
-		if cmd == constants.MSG {
+		if cmd == protocol.MSG {
 			_, _ = out.Write(buf[:n])
 		}
 		advance := n + protocol.Overhead

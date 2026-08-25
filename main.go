@@ -30,10 +30,12 @@ import (
 
 const cookieName = "compterm"
 
+// Version is stamped by release.sh via -ldflags "-X main.Version=...".
+var Version = "dev"
+
 var (
 	defaultScreen = screen.New(25, 80) // rows, columns
 	ptmx          *os.File
-	GitTag        string           = "0.0.0v"
 	sc            *session.Control = session.New(cookieName)
 	mx            sync.Mutex
 )
@@ -396,6 +398,11 @@ func main() {
 		log.Fatalf("error loading config: %s\n", err)
 	}
 
+	if config.CFG.ShowVersion {
+		fmt.Println(Version)
+		return
+	}
+
 	// refuse to nest inside another compterm session
 	if !config.CFG.IgnorePID {
 		if pid := os.Getenv("COMPTERM"); pid != "" {
@@ -404,14 +411,14 @@ func main() {
 		}
 	}
 
-	logFile := config.CFG.Path + "/compterm.log"
-	f, err := os.OpenFile(filepath.Clean(logFile), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
+	logFile := filepath.Join(config.CFG.Path, "compterm.log")
+	f, err := os.OpenFile(filepath.Clean(logFile), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600) // #nosec G304 -- operator-controlled config dir
 	if err != nil {
 		log.Fatalf("error opening log file: %s %s\n", logFile, err)
 	}
 	log.SetOutput(f)
 
-	log.Printf("compterm version %s\n", GitTag)
+	log.Printf("compterm version %s\n", Version)
 	log.Printf("pid: %d\n", os.Getpid())
 
 	// Handle terminal resize.

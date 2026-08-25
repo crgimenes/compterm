@@ -27,17 +27,20 @@ Compterm accepts the following command-line flags:
 - `-command` string: command to share (default `$SHELL`)
 - `-term` string: TERM for the shared command (default `xterm-256color`; empty inherits the host's)
 - `-colorterm` string: COLORTERM for the shared command (default `truecolor`; empty disables 24-bit color)
-- `-path` string: path to configuration files (default `$HOME/.config/compterm`)
+- `-path` string: path to configuration files (default: the OS user config
+  directory, e.g. `~/Library/Application Support/compterm` on macOS,
+  `~/.config/compterm` on Linux)
 - `-init` string: configuration file name (default `init.filo`)
 - `-ignore_pid`: ignore the COMPTERM pid guard
+- `-version`: print the version and exit
 
 It also recognizes the matching environment variables: `COMPTERM_LISTEN`,
 `COMPTERM_AUTH_TOKEN`, `COMPTERM_COMMAND`, `COMPTERM_TERM`, `COMPTERM_COLORTERM`,
 `COMPTERM_PATH`, `COMPTERM_INIT_FILE`, and `COMPTERM_IGNORE_PID`.
 
 Finally, Compterm reads a [Filo](https://github.com/crgimenes/filo)
-configuration file, looked up at `./init.filo` and then
-`$COMPTERM_PATH/init.filo`. A documented default is created on first run. Each
+configuration file, looked up at `./compterm_init.filo` and then
+`<config dir>/init.filo`. A documented default is created on first run. Each
 `(set Key value)` overrides the corresponding setting:
 
 ```lisp
@@ -128,12 +131,10 @@ scrollback rather than on a redrawable screen.
 
 # Contributing
 
-Contributions are welcome! Please refer to our contribution guidelines for details on how to contribute to this project.
-
-Before sending changes, run the verification gate:
+Contributions are welcome. Before sending changes, run the verification gate:
 
 ```bash
-make check   # go fix, gofmt, go vet, gosec, and the race-enabled tests
+make check   # go fix, gofmt, vet, linters, and the race-enabled tests
 ```
 
 # License

@@ -5,24 +5,25 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
 	"unicode"
 
-	"github.com/crgimenes/compterm/constants"
 	"github.com/crgimenes/filo"
 )
 
 type Config struct {
-	IgnorePID bool
-	Listen    string
-	Command   string
-	AuthToken string
-	Term      string
-	ColorTerm string
-	Path      string
-	InitFile  string
+	IgnorePID   bool
+	ShowVersion bool
+	Listen      string
+	Command     string
+	AuthToken   string
+	Term        string
+	ColorTerm   string
+	Path        string
+	InitFile    string
 }
 
 var CFG = &Config{}
@@ -32,6 +33,9 @@ var CFG = &Config{}
 const (
 	defaultListen   = "0.0.0.0:2200"
 	defaultInitFile = "init.filo"
+	// localInitFile carries the app name because it lives in an arbitrary
+	// working directory, where a bare init.filo would not say whose it is.
+	localInitFile = "compterm_init.filo"
 	// defaultTerm normalizes the shared session to a widely supported terminal
 	// type so colors render consistently in the browser. Empty inherits the
 	// host's TERM (not recommended: breaks colors outside tmux).
@@ -71,6 +75,9 @@ func Load() error {
 	}
 
 	parseFlags(CFG)
+	if CFG.ShowVersion {
+		return nil
+	}
 
 	if err := loadFilo(CFG); err != nil {
 		return err
@@ -80,15 +87,14 @@ func Load() error {
 }
 
 func applyDefaultsAndEnv(c *Config) error {
-	home, err := os.UserHomeDir()
+	// os.UserConfigDir resolves the platform's own location (XDG on Linux,
+	// ~/Library/Application Support on macOS), which also holds under the
+	// macOS sandbox where ~/.config is not reachable.
+	configDir, err := os.UserConfigDir()
 	if err != nil {
 		return err
 	}
-
-	defaultPath, err := filepath.Abs(filepath.Join(home, ".config", "compterm"))
-	if err != nil {
-		return err
-	}
+	defaultPath := filepath.Join(configDir, "compterm")
 
 	c.Listen = envOr("COMPTERM_LISTEN", defaultListen)
 	c.AuthToken = os.Getenv("COMPTERM_AUTH_TOKEN")
@@ -111,16 +117,27 @@ func parseFlags(c *Config) {
 	flag.StringVar(&c.Path, "path", c.Path, "path to configuration files")
 	flag.StringVar(&c.InitFile, "init", c.InitFile, "configuration file name")
 	flag.BoolVar(&c.IgnorePID, "ignore_pid", c.IgnorePID, "ignore the COMPTERM pid guard")
+	flag.BoolVar(&c.ShowVersion, "version", false, "print the version and exit")
 
-	flag.Usage = usage
+	// Asking for help is legitimate use: it goes to stdout with status 0.
+	// Incorrect usage keeps the stderr/status-2 path below.
+	showHelp := flag.Bool("h", false, "show this help and exit")
+	flag.BoolVar(showHelp, "help", *showHelp, "show this help and exit")
+
+	flag.Usage = func() { usage(os.Stderr) }
 	flag.Parse()
+
+	if *showHelp {
+		usage(os.Stdout)
+		os.Exit(0)
+	}
 }
 
 // loadFilo seeds the current configuration as Filo globals, evaluates the
 // configuration file, and reads the overridable values back. Path and InitFile
 // are intentionally not read back because they locate the file itself.
 func loadFilo(c *Config) error {
-	if err := os.MkdirAll(c.Path, constants.DefaultDirMode); err != nil {
+	if err := os.MkdirAll(c.Path, 0o750); err != nil {
 		return err
 	}
 
@@ -169,11 +186,11 @@ func loadFilo(c *Config) error {
 }
 
 // resolveInitFile returns the configuration file to evaluate, preferring a
-// local file in the working directory and falling back to the configuration
-// directory, which is seeded with a default file on first run.
+// compterm_init.filo in the working directory and falling back to the
+// configuration directory, which is seeded with a default file on first run.
 func resolveInitFile(c *Config) (string, error) {
-	if _, err := os.Stat(c.InitFile); err == nil {
-		return c.InitFile, nil
+	if _, err := os.Stat(localInitFile); err == nil {
+		return localInitFile, nil
 	}
 
 	fallback := filepath.Join(c.Path, c.InitFile)
@@ -185,7 +202,7 @@ func resolveInitFile(c *Config) (string, error) {
 		return "", err
 	}
 
-	err = os.WriteFile(fallback, []byte(defaultInitFilo), constants.DefaultFileMode)
+	err = os.WriteFile(fallback, []byte(defaultInitFilo), 0o600)
 	if err != nil {
 		return "", fmt.Errorf("creating default config %q: %w", fallback, err)
 	}
@@ -274,20 +291,24 @@ func filoBool(f *filo.Filo, name string, fallback bool) bool {
 	return v
 }
 
-func usage() {
+func usage(w io.Writer) {
 	p := func(msg string) {
-		_, _ = os.Stderr.WriteString(msg)
+		_, _ = io.WriteString(w, msg)
 	}
 
 	p("Compterm - A terminal sharing tool\n\n")
 	p("Usage: compterm [options]\n\n")
 	p("Options:\n")
+	flag.CommandLine.SetOutput(w)
 	flag.PrintDefaults()
 	p("\nEnvironment variables (override defaults, overridden by flags and the config file):\n")
 	p("    COMPTERM_LISTEN, COMPTERM_AUTH_TOKEN, COMPTERM_COMMAND, COMPTERM_TERM,\n")
 	p("    COMPTERM_COLORTERM, COMPTERM_PATH, COMPTERM_INIT_FILE, COMPTERM_IGNORE_PID\n")
 	p("\nConfiguration file (Filo):\n")
-	p("    Looked up at ./init.filo, then $COMPTERM_PATH/init.filo.\n")
+	p("    Looked up at ./" + localInitFile + ", then <config dir>/init.filo,\n")
+	p("    where <config dir> is os.UserConfigDir()/compterm (override with -path).\n")
 	p("    Overrides every other setting except -path and -init.\n")
 	p("    Created with a documented default on first run.\n")
+	p("\nExample:\n")
+	p("    compterm -auth_token secret -command /bin/zsh\n")
 }

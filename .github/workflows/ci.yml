@@ -1,0 +1,25 @@
+name: test
+
+on: [push, pull_request, workflow_dispatch]
+
+jobs:
+  test:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # The supported platforms: creack/pty and SIGWINCH are Unix-only.
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      # The binary embeds the web bundle, which is gitignored, so it must be
+      # built before anything compiles the assets package.
+      - name: Bundle web assets
+        run: make js
+      - run: go build ./...
+      - run: go vet ./...
+      - run: go test -race -count 1 -timeout 30s ./...

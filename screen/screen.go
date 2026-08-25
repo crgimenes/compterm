@@ -12,7 +12,6 @@ import (
 
 	"github.com/coder/websocket"
 
-	"github.com/crgimenes/compterm/constants"
 	"github.com/crgimenes/compterm/mterm"
 	"github.com/crgimenes/compterm/protocol"
 	"github.com/crgimenes/compterm/stream"
@@ -121,7 +120,7 @@ func (s *Screen) broadcast(prefix byte, p []byte) {
 }
 
 func (s *Screen) writeToAttachedClients() {
-	buf := make([]byte, constants.BufferSize)
+	buf := make([]byte, protocol.BufferSize)
 	carry := 0 // bytes of an incomplete trailing UTF-8 rune, held at buf's front
 	for {
 		n, err := s.Read(buf[carry:])
@@ -139,7 +138,7 @@ func (s *Screen) writeToAttachedClients() {
 		// is dense with multibyte glyphs, would otherwise split into U+FFFD).
 		good := completeRunePrefix(buf[:total])
 		if good > 0 {
-			s.broadcast(constants.MSG, buf[:good])
+			s.broadcast(protocol.MSG, buf[:good])
 		}
 		carry = total - good
 		copy(buf, buf[good:total])
@@ -180,13 +179,13 @@ func (s *Screen) updateToCurrentState(c *Client) {
 	crows, ccolumns := s.CursorPos()
 	msg := s.GetScreenAsANSI()
 
-	_ = c.Send(constants.RESIZE,
+	_ = c.Send(protocol.RESIZE,
 		fmt.Appendf(nil, "%d:%d", rows, columns))
 
 	m := fmt.Sprintf("\033[8;%d;%dt\033[0;0H%s\033[%d;%dH",
 		rows, columns, msg, crows+1, ccolumns+1)
 
-	_ = c.Send(constants.MSG, []byte(m))
+	_ = c.Send(protocol.MSG, []byte(m))
 }
 
 func (s *Screen) Read(p []byte) (n int, err error) {
@@ -206,7 +205,7 @@ func (s *Screen) Resize(rows, columns int) {
 	s.mx.Unlock()
 
 	_, _ = s.Write(fmt.Appendf(nil, "\033[8;%d;%dt", rows, columns))
-	s.broadcast(constants.RESIZE, fmt.Appendf(nil, "%d:%d", rows, columns))
+	s.broadcast(protocol.RESIZE, fmt.Appendf(nil, "%d:%d", rows, columns))
 }
 
 // GetScreenAsANSI returns the current screen content as ANSI.
@@ -223,7 +222,7 @@ func NewClient(conn *websocket.Conn) *Client {
 	c := &Client{
 		bs:      stream.New(),
 		conn:    conn,
-		outbuff: make([]byte, constants.BufferSize),
+		outbuff: make([]byte, protocol.BufferSize),
 		done:    make(chan struct{}),
 	}
 
@@ -304,7 +303,7 @@ func (c *Client) rejectInput() {
 
 // writeLoop drains the client stream to the websocket.
 func (c *Client) writeLoop() {
-	buff := make([]byte, constants.BufferSize)
+	buff := make([]byte, protocol.BufferSize)
 	for {
 		select {
 		case <-c.done:

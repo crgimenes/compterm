@@ -4,12 +4,11 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/crgimenes/compterm/constants"
 	"github.com/crgimenes/compterm/protocol"
 )
 
 func TestRenderFrames(t *testing.T) {
-	enc := make([]byte, constants.BufferSize)
+	enc := make([]byte, protocol.BufferSize)
 	frame := func(cmd byte, payload string) []byte {
 		n, err := protocol.Encode(enc, []byte(payload), cmd)
 		if err != nil {
@@ -20,12 +19,12 @@ func TestRenderFrames(t *testing.T) {
 
 	// One websocket message carrying MSG, RESIZE (skipped), MSG.
 	var msg []byte
-	msg = append(msg, frame(constants.MSG, "hello ")...)
-	msg = append(msg, frame(constants.RESIZE, "25:80")...)
-	msg = append(msg, frame(constants.MSG, "world")...)
+	msg = append(msg, frame(protocol.MSG, "hello ")...)
+	msg = append(msg, frame(protocol.RESIZE, "25:80")...)
+	msg = append(msg, frame(protocol.MSG, "world")...)
 
 	var out bytes.Buffer
-	renderFrames(make([]byte, constants.BufferSize), msg, &out)
+	renderFrames(make([]byte, protocol.BufferSize), msg, &out)
 
 	if got := out.String(); got != "hello world" {
 		t.Fatalf("renderFrames output = %q, want %q", got, "hello world")

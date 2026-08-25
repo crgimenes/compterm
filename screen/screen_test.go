@@ -4,7 +4,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/crgimenes/compterm/constants"
+	"github.com/crgimenes/compterm/protocol"
 	"github.com/crgimenes/compterm/stream"
 )
 
@@ -41,7 +41,7 @@ func TestCompleteRunePrefix(t *testing.T) {
 func bareClient() *Client {
 	return &Client{
 		bs:      stream.New(),
-		outbuff: make([]byte, constants.BufferSize),
+		outbuff: make([]byte, protocol.BufferSize),
 		done:    make(chan struct{}),
 	}
 }

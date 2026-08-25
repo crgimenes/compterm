@@ -1,6 +1,7 @@
 BINARY_NAME = compterm
-GIT_TAG = $(shell git describe --tags --always)
-LDFLAGS = -X 'main.GitTag=$(GIT_TAG)' -w -s
+VERSION ?= $(shell git describe --tags --always)
+DIST_DIR ?= dist
+LDFLAGS = -X 'main.Version=$(VERSION)' -w -s
 export CGO_ENABLED=0
 
 all: js
@@ -30,11 +31,18 @@ js: node_modules
 js-clean:
 	rm -rf assets/term.min.js* node_modules
 
+# Release artifacts, invoked by release.sh as `make dist VERSION=... DIST_DIR=...`.
+# The bundle must be built first because the binary embeds it. Windows is not a
+# target: creack/pty and SIGWINCH are Unix-only.
+dist: js
+	mkdir -p $(DIST_DIR)
+	GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags "$(LDFLAGS)" -o $(DIST_DIR)/$(BINARY_NAME)-darwin-arm64 .
+	GOOS=darwin GOARCH=amd64 go build -trimpath -ldflags "$(LDFLAGS)" -o $(DIST_DIR)/$(BINARY_NAME)-darwin-amd64 .
+	GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "$(LDFLAGS)" -o $(DIST_DIR)/$(BINARY_NAME)-linux-amd64 .
+	GOOS=linux GOARCH=arm64 go build -trimpath -ldflags "$(LDFLAGS)" -o $(DIST_DIR)/$(BINARY_NAME)-linux-arm64 .
+	gzip -f $(DIST_DIR)/$(BINARY_NAME)-linux-amd64 $(DIST_DIR)/$(BINARY_NAME)-linux-arm64
 
-intel:
-	GOOS=linux GOARCH=amd64 go build -trimpath -o $(BINARY_NAME) -ldflags "$(LDFLAGS)" .
-
-# Static-analysis and test gate (mirrors the eprojects verification flow).
+# Static-analysis and test gate (the house QA flow).
 # Note: go fix rewrites code in place to adopt new idioms — review its changes.
 # G115 (integer-overflow conversions) is excluded: the only hits are safe fd and
 # SGR color-byte conversions. The race detector needs cgo, so it overrides the
@@ -42,14 +50,18 @@ intel:
 check:
 	go fix ./...
 	go fix -inline ./...
+	modernize -fix ./...
 	@test -z "$$(gofmt -l .)" || { echo "gofmt needs to run on:"; gofmt -l .; exit 1; }
 	go vet ./...
+	golangci-lint run ./...
 	gosec -quiet -exclude=G115 ./...
-	CGO_ENABLED=1 go test -race ./...
+	staticcheck ./...
+	golangci-lint run --no-config --default=none --enable=gocognit --tests=false ./...
+	CGO_ENABLED=1 go test -race -count 1 -timeout 30s ./...
 
 clean: js-clean
 	go clean
 	rm -f $(BINARY_NAME)
+	rm -rf $(DIST_DIR)
 
-.PHONY: all dev dev-race clean check js js-dev js-clean js-deps intel
-
+.PHONY: all dev dev-race clean check js js-dev js-clean js-deps dist

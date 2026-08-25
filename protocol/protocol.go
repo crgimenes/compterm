@@ -14,16 +14,24 @@ package protocol
 import (
 	"encoding/binary"
 	"errors"
-
-	"github.com/crgimenes/compterm/constants"
 )
+
+// Frame command bytes. Mirrored in assets/term.js; change both together.
+const (
+	MSG    = 0x1
+	RESIZE = 0x2
+)
+
+// BufferSize is the largest payload a frame carries, and the read buffer size
+// used throughout the project.
+const BufferSize = 262144
 
 // Overhead is the number of framing bytes around a payload:
 // command (1) + length (4) + checksum (4).
 const Overhead = 9
 
 // MaxPackageSize is the largest a whole frame can be.
-const MaxPackageSize = constants.BufferSize + Overhead
+const MaxPackageSize = BufferSize + Overhead
 
 var (
 	ErrInvalidSize     = errors.New("invalid size")
@@ -68,7 +76,7 @@ func Decode(dest, src []byte) (cmd byte, n int, err error) {
 		return 0, 0, ErrInvalidSize
 	}
 	lenData := int(binary.BigEndian.Uint32(src[1:]))
-	if lenData > constants.BufferSize {
+	if lenData > BufferSize {
 		return 0, 0, ErrInvalidSize
 	}
 	if len(src) < lenData+Overhead {

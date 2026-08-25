@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"math/rand"
 	"testing"
-
-	"github.com/crgimenes/compterm/constants"
 )
 
 func Test_checksum(t *testing.T) {
@@ -41,7 +39,7 @@ func TestEncodeDecode(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	data := make([]byte, constants.BufferSize)
+	data := make([]byte, BufferSize)
 	cmd, n, err := Decode(data, out[:nout])
 	if err != nil {
 		t.Fatal(err)
@@ -73,7 +71,7 @@ func TestEncodeDecode(t *testing.T) {
 	}
 
 	// boundary payload sizes that must encode fine
-	for _, size := range []int{0, 1, constants.BufferSize - 1, constants.BufferSize} {
+	for _, size := range []int{0, 1, BufferSize - 1, BufferSize} {
 		if _, err := Encode(out, make([]byte, size), 0x01); err != nil {
 			t.Errorf("Encode(%d bytes) err = %v, want nil", size, err)
 		}
@@ -107,7 +105,7 @@ func randomPayload(n int) string {
 }
 
 func TestEncodeDecodeLoop(t *testing.T) {
-	data := make([]byte, constants.BufferSize)
+	data := make([]byte, BufferSize)
 	for i := range 1000 {
 		in := []byte(randomPayload(rand.Intn(10 + i)))
 		out := make([]byte, MaxPackageSize)
@@ -148,7 +146,7 @@ func ExampleDecode() {
 		panic(err)
 	}
 
-	data := make([]byte, constants.BufferSize)
+	data := make([]byte, BufferSize)
 	cmd, n, err := Decode(data, out[:n])
 	if err != nil {
 		panic(err)
