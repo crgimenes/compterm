@@ -114,6 +114,9 @@ func printBanner(listen, logFile string) {
 	} else {
 		fmt.Println("auth: open, no token required")
 	}
-	fmt.Printf("config: %s\nlog: %s\n", info.ConfigDir, info.LogFile)
+	fmt.Printf("config: %q\nlog: %q\n",
+		info.ConfigDir,
+		info.LogFile,
+	)
 	fmt.Println("exit the shell to stop sharing")
 }

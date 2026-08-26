@@ -5,3 +5,4 @@ node_modules/
 dist/
 release.sh
 TODO.md
+compterm_nox.sh
