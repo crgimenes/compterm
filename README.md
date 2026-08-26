@@ -33,6 +33,13 @@ Compterm accepts the following command-line flags:
 - `-init` string: configuration file name (default `init.filo`)
 - `-ignore_pid`: ignore the COMPTERM pid guard
 - `-version`: print the version and exit
+- `-json`: print the startup banner as a single JSON line (for scripts and
+  agents)
+
+On startup, before the shared shell appears, compterm prints a banner with the
+bound address, ready-to-share viewer URLs (the access token included when one
+is set), and the config and log locations. A wildcard listen address expands to
+the machine's hostname and its IPv4 addresses.
 
 It also recognizes the matching environment variables: `COMPTERM_LISTEN`,
 `COMPTERM_AUTH_TOKEN`, `COMPTERM_COMMAND`, `COMPTERM_TERM`, `COMPTERM_COLORTERM`,

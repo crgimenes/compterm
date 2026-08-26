@@ -7,6 +7,7 @@ import (
 	"html"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -362,17 +363,16 @@ func newMux() *http.ServeMux {
 	return mux
 }
 
-func serveHTTP() {
+func serveHTTP(ln net.Listener) {
 	s := &http.Server{
 		Handler:        newMux(),
-		Addr:           config.CFG.Listen,
 		ReadTimeout:    5 * time.Second,
 		WriteTimeout:   5 * time.Second,
 		MaxHeaderBytes: 1 << 20,
 	}
 
-	log.Printf("Listening on %v\n", config.CFG.Listen)
-	log.Fatal(s.ListenAndServe())
+	log.Printf("Listening on %v\n", ln.Addr())
+	log.Fatal(s.Serve(ln))
 }
 
 func updateTerminalSize() {
@@ -406,7 +406,7 @@ func main() {
 	// refuse to nest inside another compterm session
 	if !config.CFG.IgnorePID {
 		if pid := os.Getenv("COMPTERM"); pid != "" {
-			fmt.Printf("There is already a compterm running, pid: %s\n", pid)
+			fmt.Fprintf(os.Stderr, "There is already a compterm running, pid: %s\n", pid)
 			os.Exit(1)
 		}
 	}
@@ -420,6 +420,17 @@ func main() {
 
 	log.Printf("compterm version %s\n", Version)
 	log.Printf("pid: %d\n", os.Getpid())
+
+	// Bind before starting the shared shell so a bad address fails loudly on
+	// the operator's terminal (the logger already writes to the file) and the
+	// banner reports the address actually bound.
+	ln, err := net.Listen("tcp", config.CFG.Listen)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "cannot listen on %s: %s\n", config.CFG.Listen, err)
+		os.Exit(1)
+	}
+
+	printBanner(ln.Addr().String(), logFile)
 
 	// Handle terminal resize.
 	ch := make(chan os.Signal, 1)
@@ -442,7 +453,7 @@ func main() {
 		}
 	}()
 
-	go serveHTTP()
+	go serveHTTP(ln)
 
 	runCmd()
 }

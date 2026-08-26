@@ -17,6 +17,7 @@ import (
 type Config struct {
 	IgnorePID   bool
 	ShowVersion bool
+	JSON        bool
 	Listen      string
 	Command     string
 	AuthToken   string
@@ -118,6 +119,7 @@ func parseFlags(c *Config) {
 	flag.StringVar(&c.InitFile, "init", c.InitFile, "configuration file name")
 	flag.BoolVar(&c.IgnorePID, "ignore_pid", c.IgnorePID, "ignore the COMPTERM pid guard")
 	flag.BoolVar(&c.ShowVersion, "version", false, "print the version and exit")
+	flag.BoolVar(&c.JSON, "json", false, "print the startup banner as a single JSON line (for scripts and agents)")
 
 	// Asking for help is legitimate use: it goes to stdout with status 0.
 	// Incorrect usage keeps the stderr/status-2 path below.
