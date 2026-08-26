@@ -126,6 +126,32 @@ func (t *Terminal) GetScreenAsAnsi() []byte {
 	return t.getScreenAsAnsi()
 }
 
+// AltScreenActive reports whether the alternate screen is in use.
+func (t *Terminal) AltScreenActive() bool {
+	t.mux.Lock()
+	defer t.mux.Unlock()
+
+	return t.screenTarget == 1
+}
+
+// GetModesAsAnsi returns the escape sequences that restore terminal state the
+// screen content alone cannot carry. Today that is the DECSTBM scroll region:
+// without it a reconnected viewer scrolls the whole screen where the host
+// (e.g. tmux protecting its status line) scrolls only a region, leaving a
+// stale copy of the protected line behind. Empty when the region is the full
+// screen. DECSTBM homes the cursor, so callers must emit this before the
+// final cursor position.
+func (t *Terminal) GetModesAsAnsi() []byte {
+	t.mux.Lock()
+	defer t.mux.Unlock()
+
+	s := t.screens[t.screenTarget]
+	if t.scrollRegion[0] == 0 && t.scrollRegion[1] == s.size[0] {
+		return nil
+	}
+	return fmt.Appendf(nil, "\033[%d;%dr", t.scrollRegion[0]+1, t.scrollRegion[1])
+}
+
 // GetCursorPos returns the current cursor position in lines, cols
 func (t *Terminal) CursorPos() (int, int) {
 	t.mux.Lock()
@@ -227,7 +253,14 @@ func (t *Terminal) normal(r rune) (stateFn, error) {
 	case r < ' ': // least printable char, we ignore it
 	// case !unicode.IsPrint(r):
 	default:
-		if s.cursor[1] >= cols {
+		w := runeWidth(r)
+		if w == 0 {
+			// combining and zero-width marks have no cell of their own
+			return nil, nil
+		}
+		// a rune that does not fit in the remaining columns wraps first,
+		// including a wide rune at the last column (as real terminals do)
+		if s.cursor[1]+w > cols {
 			t.nextLine()
 			s.cursor[1] = 0
 		}
@@ -243,6 +276,13 @@ func (t *Terminal) normal(r rune) (stateFn, error) {
 		}
 		screen[offs] = cl
 		s.cursor[1]++
+		if w == 2 {
+			// the second column of a wide rune renders nothing of its own
+			if offs+1 < len(screen) {
+				screen[offs+1] = Cell{cont: true, SGRState: t.cstate}
+			}
+			s.cursor[1]++
+		}
 	}
 	return nil, nil
 }
@@ -698,6 +738,10 @@ func renderCells(buf *bytes.Buffer, screen []Cell, cols int) SGRState {
 		}
 
 		for _, c := range row[:end] {
+			if c.cont {
+				// the wide rune in the previous cell already covers this column
+				continue
+			}
 			if c.SGRState != lastState {
 				lastState = c.SGRState
 				emitSGR(buf, c)
@@ -709,6 +753,9 @@ func renderCells(buf *bytes.Buffer, screen []Cell, cols int) SGRState {
 }
 
 func isBlankCell(c Cell) bool {
+	if c.cont {
+		return true
+	}
 	return c.SGRState == (SGRState{}) && (c.Char == 0 || c.Char == ' ')
 }
 

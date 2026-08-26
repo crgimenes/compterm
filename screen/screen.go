@@ -184,10 +184,18 @@ func (s *Screen) updateToCurrentState(c *Client) {
 	// History and screen print as one continuous stream: the history lines
 	// scroll into the viewer's own scrollback and the final rows*columns
 	// block is exactly the visible screen, so nothing is lost or duplicated
-	// at the seam.
+	// at the seam. When the host is on the alternate screen the viewer is
+	// switched to its own alt screen between the two, so the primary buffer
+	// keeps history+primary and leaving the alt screen restores it.
 	m := fmt.Appendf(nil, "\033[8;%d;%dt\033[0;0H", rows, columns)
 	m = append(m, s.GetHistoryAsANSI()...)
+	if s.mt.AltScreenActive() {
+		m = append(m, "\033[?1049h\033[0;0H"...)
+	}
 	m = append(m, s.GetScreenAsANSI()...)
+	// Modes (e.g. tmux's scroll region) come after the content and before the
+	// cursor position, which DECSTBM would otherwise reset.
+	m = append(m, s.mt.GetModesAsAnsi()...)
 	m = fmt.Appendf(m, "\033[%d;%dH", crows+1, ccolumns+1)
 
 	s.sendSnapshot(c, m)

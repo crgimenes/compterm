@@ -106,6 +106,36 @@ func TestSnapshotIncludesHistory(t *testing.T) {
 	}
 }
 
+// TestSnapshotRestoresTmuxModes pins the reconnect contract for a tmux-style
+// host: the snapshot must re-enter the alt screen and re-establish the scroll
+// region (after the content, before the cursor position) — without them the
+// viewer's next region scroll moves the whole screen and duplicates the
+// protected status line.
+func TestSnapshotRestoresTmuxModes(t *testing.T) {
+	s := New(10, 20)
+	_, err := s.Write([]byte("before\r\n\033[?1049h\033[10;1HSTATUS\033[1;9r\033[9;1Hcontent"))
+	if err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	c := bareClient()
+	s.updateToCurrentState(c)
+
+	got := string(drainPayloads(t, c, 1))
+	alt := strings.Index(got, "\033[?1049h")
+	status := strings.Index(got, "STATUS")
+	region := strings.Index(got, "\033[1;9r")
+	if alt < 0 || status < 0 || region < 0 {
+		t.Fatalf("snapshot is missing alt screen, content, or region: %q", got)
+	}
+	if alt >= status || status >= region {
+		t.Errorf("wrong order: alt=%d content=%d region=%d in %q", alt, status, region, got)
+	}
+	if !strings.Contains(got[region:], "H") {
+		t.Errorf("no cursor position after the region: %q", got[region:])
+	}
+}
+
 // TestSendSnapshotChunks verifies that a snapshot larger than one frame is
 // split across frames without ever cutting a multibyte rune.
 func TestSendSnapshotChunks(t *testing.T) {

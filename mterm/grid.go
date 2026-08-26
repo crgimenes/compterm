@@ -4,6 +4,7 @@ package mterm
 type Cell struct {
 	Char rune
 	nl   bool // new: 2023-12-13 is new line
+	cont bool // occupied by the wide rune in the previous cell
 	SGRState
 }
 

@@ -133,6 +133,106 @@ func TestScrollRegionKeepsStatusLine(t *testing.T) {
 	}
 }
 
+// displayWidth sums the terminal columns of every printable rune in s,
+// skipping escape sequences (which occupy no columns).
+func displayWidth(s string) int {
+	w := 0
+	inEsc := false
+	for _, r := range s {
+		switch {
+		case inEsc:
+			if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') {
+				inEsc = false
+			}
+		case r == '\033':
+			inEsc = true
+		case r == '\r' || r == '\n':
+		default:
+			w += runeWidth(r)
+		}
+	}
+	return w
+}
+
+func TestRuneWidth(t *testing.T) {
+	tests := []struct {
+		r    rune
+		want int
+	}{
+		{'a', 1}, {'時', 2}, {'の', 2}, {'█', 1}, {0x0301, 0}, {'😀', 2}, {'가', 2},
+	}
+	for _, tt := range tests {
+		if got := runeWidth(tt.r); got != tt.want {
+			t.Errorf("runeWidth(%q) = %d, want %d", tt.r, got, tt.want)
+		}
+	}
+}
+
+// TestWideRunesNeverOverflow pins the reconnect regression: a full-width line
+// containing CJK (the tmux status bar pattern) must re-render within the
+// terminal's columns. Counting a wide rune as one cell made the rendered line
+// two columns too wide, which wrapped on the viewer's last row and scrolled
+// its whole screen mid-snapshot.
+func TestWideRunesNeverOverflow(t *testing.T) {
+	tr := New(5, 10)
+
+	// 6 narrow + 2 wide runes = 10 columns, exactly full
+	_, err := tr.Write([]byte("abcdef時の"))
+	if err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	_, col := tr.CursorPos()
+	if col != 10 {
+		t.Errorf("cursor column = %d, want 10 (wide runes advance two)", col)
+	}
+
+	screen := string(tr.GetScreenAsAnsi())
+	first, _, _ := strings.Cut(screen, "\r\n")
+	if got := displayWidth(first); got != 10 {
+		t.Errorf("rendered row display width = %d, want 10: %q", got, first)
+	}
+	if !strings.Contains(first, "abcdef時の") {
+		t.Errorf("rendered row lost content: %q", first)
+	}
+}
+
+// TestWideRuneWraps: a wide rune that does not fit in the last column wraps
+// to the next line, as real terminals do.
+func TestWideRuneWraps(t *testing.T) {
+	tr := New(5, 10)
+
+	_, err := tr.Write([]byte("abcdefghi時"))
+	if err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	screen := string(tr.GetScreenAsAnsi())
+	lines := strings.Split(screen, "\r\n")
+	if lines[0] != "abcdefghi" {
+		t.Errorf("first line = %q, want abcdefghi", lines[0])
+	}
+	if lines[1] != "時" {
+		t.Errorf("second line = %q, want the wrapped wide rune", lines[1])
+	}
+}
+
+func TestModesScrollRegion(t *testing.T) {
+	tr := New(10, 20)
+
+	if m := tr.GetModesAsAnsi(); len(m) != 0 {
+		t.Fatalf("full-screen region produced modes: %q", m)
+	}
+
+	_, err := tr.Write([]byte("\033[3;9r"))
+	if err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if m := string(tr.GetModesAsAnsi()); m != "\033[3;9r" {
+		t.Errorf("modes = %q, want DECSTBM 3;9", m)
+	}
+}
+
 // TestHistoryAltScreen: with the alt screen active, the whole primary screen
 // is history — it is what was on display before the alt-screen app started.
 func TestHistoryAltScreen(t *testing.T) {

@@ -92,41 +92,42 @@ function connectWS() {
   const url = `${proto === 'https:' ? 'wss' : 'ws'}://${host}${base}/ws`;
   const ws = new WebSocket(url);
 
-  ws.binaryType = 'blob';
+  // arraybuffer, never blob: a Blob needs an async FileReader per message,
+  // and readers of different-sized messages can complete out of order — a
+  // small live frame applied before the big attach snapshot scrolls a stale
+  // screen and leaves displaced rows behind. An ArrayBuffer is delivered
+  // synchronously, so frames apply strictly in arrival order.
+  ws.binaryType = 'arraybuffer';
 
   ws.onopen = () => terminal.reset();
 
   ws.onmessage = ({ data }) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      let array = new Uint8Array(reader.result);
-      try {
-        // A single websocket message may carry several concatenated frames.
-        while (array.length >= 9) {
-          const { command, payloadLength, payload } = decodeProtocol(array);
-          switch (command) {
-            case MSG:
-              // pass raw bytes: xterm.js reassembles UTF-8 across writes, so a
-              // multibyte glyph split across frames (common with image ANSI)
-              // doesn't turn into replacement characters. reserveIIP inserts the
-              // blank rows an inline image occupies before xterm parses them.
-              terminal.write(reserveIIP(payload));
-              break;
-            case RESIZE: {
-              const [cols, rows] = decoder.decode(payload).split(':');
-              terminal.resize(+rows, +cols);
-              break;
-            }
-            default:
-              console.log('unknown command', command);
+    let array = new Uint8Array(data);
+    try {
+      // A single websocket message may carry several concatenated frames.
+      while (array.length >= 9) {
+        const { command, payloadLength, payload } = decodeProtocol(array);
+        switch (command) {
+          case MSG:
+            // pass raw bytes: xterm.js reassembles UTF-8 across writes, so a
+            // multibyte glyph split across frames (common with image ANSI)
+            // doesn't turn into replacement characters. reserveIIP inserts the
+            // blank rows an inline image occupies before xterm parses them.
+            terminal.write(reserveIIP(payload));
+            break;
+          case RESIZE: {
+            const [cols, rows] = decoder.decode(payload).split(':');
+            terminal.resize(+rows, +cols);
+            break;
           }
-          array = array.subarray(payloadLength + 9);
+          default:
+            console.log('unknown command', command);
         }
-      } catch (err) {
-        console.log('frame decode error:', err.message);
+        array = array.subarray(payloadLength + 9);
       }
-    };
-    reader.readAsArrayBuffer(data);
+    } catch (err) {
+      console.log('frame decode error:', err.message);
+    }
   };
 
   ws.onerror = () => ws.close();
