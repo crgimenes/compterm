@@ -177,15 +177,36 @@ func (s *Screen) Write(p []byte) (n int, err error) {
 func (s *Screen) updateToCurrentState(c *Client) {
 	rows, columns := s.size()
 	crows, ccolumns := s.CursorPos()
-	msg := s.GetScreenAsANSI()
 
 	_ = c.Send(protocol.RESIZE,
 		fmt.Appendf(nil, "%d:%d", rows, columns))
 
-	m := fmt.Sprintf("\033[8;%d;%dt\033[0;0H%s\033[%d;%dH",
-		rows, columns, msg, crows+1, ccolumns+1)
+	// History and screen print as one continuous stream: the history lines
+	// scroll into the viewer's own scrollback and the final rows*columns
+	// block is exactly the visible screen, so nothing is lost or duplicated
+	// at the seam.
+	m := fmt.Appendf(nil, "\033[8;%d;%dt\033[0;0H", rows, columns)
+	m = append(m, s.GetHistoryAsANSI()...)
+	m = append(m, s.GetScreenAsANSI()...)
+	m = fmt.Appendf(m, "\033[%d;%dH", crows+1, ccolumns+1)
 
-	_ = c.Send(protocol.MSG, []byte(m))
+	s.sendSnapshot(c, m)
+}
+
+// sendSnapshot sends p in frames no larger than the protocol payload cap
+// (history can exceed one frame), never splitting a UTF-8 rune across frames.
+func (s *Screen) sendSnapshot(c *Client, p []byte) {
+	const maxPayload = protocol.BufferSize - protocol.Overhead
+	for len(p) > 0 {
+		n := min(len(p), maxPayload)
+		if n < len(p) {
+			n = completeRunePrefix(p[:n])
+		}
+		if err := c.Send(protocol.MSG, p[:n]); err != nil {
+			return
+		}
+		p = p[n:]
+	}
 }
 
 func (s *Screen) Read(p []byte) (n int, err error) {
@@ -211,6 +232,11 @@ func (s *Screen) Resize(rows, columns int) {
 // GetScreenAsANSI returns the current screen content as ANSI.
 func (s *Screen) GetScreenAsANSI() []byte {
 	return s.mt.GetScreenAsAnsi()
+}
+
+// GetHistoryAsANSI returns the lines above the visible screen as ANSI.
+func (s *Screen) GetHistoryAsANSI() []byte {
+	return s.mt.GetHistoryAsAnsi()
 }
 
 // CursorPos returns the cursor position.

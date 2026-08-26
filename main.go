@@ -309,9 +309,24 @@ func mainHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Assets are embedded and have no cache validators, so tell the browser to
-	// revalidate — otherwise an old term.min.js lingers after an upgrade.
+	// no-cache forces revalidation so an old term.min.js never lingers after
+	// an upgrade; the per-build ETag turns that revalidation into a 304, so
+	// unchanged assets (the ~900KB font in particular) cross the wire once.
 	w.Header().Set("Cache-Control", "no-cache")
+
+	name := strings.TrimPrefix(r.URL.Path, "/")
+	if name == "" {
+		name = "index.html"
+	}
+	etag := assets.ETags[name]
+	if etag != "" {
+		w.Header().Set("ETag", etag)
+		if r.Header.Get("If-None-Match") == etag {
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+	}
+
 	http.FileServer(assets.FS).ServeHTTP(w, r)
 }
 

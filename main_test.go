@@ -142,6 +142,42 @@ func TestLoginGateAndFlow(t *testing.T) {
 
 // TestAssetsServed verifies the embedded assets are served and that the
 // terminal CSS is vendored locally instead of pulled from a CDN.
+// TestAssetETag pins the revalidation contract: no-cache plus a per-build
+// ETag, so unchanged assets cost a 304 instead of a refetch.
+func TestAssetETag(t *testing.T) {
+	srv := httptest.NewServer(newMux())
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/term.css")
+	if err != nil {
+		t.Fatalf("GET /term.css: %v", err)
+	}
+	_ = resp.Body.Close()
+
+	etag := resp.Header.Get("ETag")
+	if etag == "" {
+		t.Fatal("no ETag on an embedded asset")
+	}
+	if cc := resp.Header.Get("Cache-Control"); cc != "no-cache" {
+		t.Errorf("Cache-Control = %q, want no-cache", cc)
+	}
+
+	req, err := http.NewRequest("GET", srv.URL+"/term.css", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("If-None-Match", etag)
+	resp, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("conditional GET: %v", err)
+	}
+	_ = resp.Body.Close()
+
+	if resp.StatusCode != http.StatusNotModified {
+		t.Errorf("conditional GET status = %d, want 304", resp.StatusCode)
+	}
+}
+
 func TestAssetsServed(t *testing.T) {
 	srv := httptest.NewServer(newMux())
 	defer srv.Close()

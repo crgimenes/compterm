@@ -172,7 +172,15 @@ func (t *Terminal) nextLine() {
 			// - insert a new line in offseted scrollRegion[1]
 			// - copy the rest
 			return
-		} // else copy on region?
+		}
+		if t.screenTarget == 0 && t.scrollRegion[1] == rows {
+			// At the backlog cap, drop the oldest history line instead of the
+			// top screen line, so the backlog always holds the most recent
+			// scrolled-off lines (it is what snapshots send as scrollback).
+			copy(s.cells, s.cells[cols:])
+			fill(s.cells[len(s.cells)-cols:], Cell{})
+			return
+		}
 		region := t.screenScrollRegion()
 		copy(region, region[cols:])
 		fill(region[len(region)-cols:], Cell{})
@@ -629,76 +637,126 @@ func (t *Terminal) screenView() []Cell {
 
 func (t *Terminal) getScreenAsAnsi() []byte {
 	s := t.screens[t.screenTarget]
-	cols := s.size[1]
 
 	buf := bytes.NewBuffer(nil)
-	x, y := 0, 0
-	lastState := SGRState{}
-	screen := t.screenView()
-	for i := range screen {
-		if x >= cols {
-			y++
-			x = 0
-			buf.WriteString("\r\n")
-			lastState = SGRState{}
-		}
-		c := screen[i]
-		if c.SGRState != lastState {
-			lastState = c.SGRState
-			// different state, we shall reset and set the new state
-			buf.WriteString("\033[0")
-
-			switch c.ColorType & 0b11 {
-			case Color16:
-				fmt.Fprintf(buf, ";%d", c.FG[0])
-			case Color256:
-				fmt.Fprintf(buf, ";38;5;%d", c.FG[0])
-			case Color16M:
-				fmt.Fprintf(buf, ";38;2;%d;%d;%d", c.FG[0], c.FG[1], c.FG[2])
-			}
-			switch (c.ColorType >> 2) & 0b11 {
-			case Color16:
-				fmt.Fprintf(buf, ";%d", c.BG[0])
-			case Color256:
-				fmt.Fprintf(buf, ";48;5;%d", c.BG[0])
-			case Color16M:
-				fmt.Fprintf(buf, ";48;2;%d;%d;%d", c.BG[0], c.BG[1], c.BG[2])
-			}
-			// underline
-			switch (c.ColorType >> 4) & 0b11 {
-			case Color256:
-				fmt.Fprintf(buf, ";58;5;%d", c.UL[0])
-			case Color16M:
-				fmt.Fprintf(buf, ";58;2;%d;%d;%d", c.UL[0], c.UL[1], c.UL[2])
-			}
-			if c.Flags&FlagBold != 0 {
-				buf.WriteString(";1")
-			}
-			if c.Flags&FlagDim != 0 {
-				buf.WriteString(";2")
-			}
-			if c.Flags&FlagItalic != 0 {
-				buf.WriteString(";3")
-			}
-			if c.Flags&FlagUnderline != 0 {
-				buf.WriteString(";4")
-			}
-			if c.Flags&FlagBlink != 0 {
-				buf.WriteString(";5")
-			}
-			if c.Flags&FlagInverse != 0 {
-				buf.WriteString(";7")
-			}
-			if c.Flags&FlagInvisible != 0 {
-				buf.WriteString(";8")
-			}
-			if c.Flags&FlagStrike != 0 {
-				buf.WriteString(";9")
-			}
-			fmt.Fprintf(buf, "m")
-		}
-		buf.WriteRune(max(c.Char, ' '))
-		x += 1
-	}
+	renderCells(buf, t.screenView(), s.size[1])
 	return buf.Bytes()
+}
+
+// GetHistoryAsAnsi returns the scrollback backlog — the lines above the
+// visible screen — rendered as ANSI, one \r\n-terminated line per row, ending
+// with an SGR reset so the last line's attributes never bleed into whatever
+// is written next. On the alt screen the whole primary screen counts as
+// history: it is what was on display before the alt-screen app took over.
+func (t *Terminal) GetHistoryAsAnsi() []byte {
+	t.mux.Lock()
+	defer t.mux.Unlock()
+
+	s := t.screens[0]
+	if s == nil || s.size[1] == 0 {
+		return nil
+	}
+
+	end := max(len(s.cells)-s.size[0]*s.size[1], 0)
+	if t.screenTarget != 0 {
+		end = len(s.cells)
+	}
+	if end == 0 {
+		return nil
+	}
+
+	buf := bytes.NewBuffer(nil)
+	renderCells(buf, s.cells[:end], s.size[1])
+	buf.WriteString("\033[0m\r\n")
+	return buf.Bytes()
+}
+
+// renderCells renders a row-aligned cell slice as ANSI with \r\n between
+// rows, re-emitting SGR state only when it changes.
+// renderCells renders a row-aligned cell slice as ANSI, one row per line with
+// \r\n between rows, re-emitting SGR state only when it changes. Trailing
+// cells that carry nothing (default state, blank char) are trimmed: the
+// output is printed sequentially, so padding would only waste bytes and
+// pollute copied lines with trailing spaces.
+func renderCells(buf *bytes.Buffer, screen []Cell, cols int) {
+	if cols <= 0 {
+		return
+	}
+	for start := 0; start < len(screen); start += cols {
+		if start > 0 {
+			buf.WriteString("\r\n")
+		}
+		row := screen[start:min(start+cols, len(screen))]
+
+		end := len(row)
+		for end > 0 && isBlankCell(row[end-1]) {
+			end--
+		}
+
+		lastState := SGRState{}
+		for _, c := range row[:end] {
+			if c.SGRState != lastState {
+				lastState = c.SGRState
+				emitSGR(buf, c)
+			}
+			buf.WriteRune(max(c.Char, ' '))
+		}
+	}
+}
+
+func isBlankCell(c Cell) bool {
+	return c.SGRState == (SGRState{}) && (c.Char == 0 || c.Char == ' ')
+}
+
+// emitSGR writes a full reset-and-set SGR sequence for the cell's state.
+func emitSGR(buf *bytes.Buffer, c Cell) {
+	buf.WriteString("\033[0")
+
+	switch c.ColorType & 0b11 {
+	case Color16:
+		fmt.Fprintf(buf, ";%d", c.FG[0])
+	case Color256:
+		fmt.Fprintf(buf, ";38;5;%d", c.FG[0])
+	case Color16M:
+		fmt.Fprintf(buf, ";38;2;%d;%d;%d", c.FG[0], c.FG[1], c.FG[2])
+	}
+	switch (c.ColorType >> 2) & 0b11 {
+	case Color16:
+		fmt.Fprintf(buf, ";%d", c.BG[0])
+	case Color256:
+		fmt.Fprintf(buf, ";48;5;%d", c.BG[0])
+	case Color16M:
+		fmt.Fprintf(buf, ";48;2;%d;%d;%d", c.BG[0], c.BG[1], c.BG[2])
+	}
+	switch (c.ColorType >> 4) & 0b11 {
+	case Color256:
+		fmt.Fprintf(buf, ";58;5;%d", c.UL[0])
+	case Color16M:
+		fmt.Fprintf(buf, ";58;2;%d;%d;%d", c.UL[0], c.UL[1], c.UL[2])
+	}
+	if c.Flags&FlagBold != 0 {
+		buf.WriteString(";1")
+	}
+	if c.Flags&FlagDim != 0 {
+		buf.WriteString(";2")
+	}
+	if c.Flags&FlagItalic != 0 {
+		buf.WriteString(";3")
+	}
+	if c.Flags&FlagUnderline != 0 {
+		buf.WriteString(";4")
+	}
+	if c.Flags&FlagBlink != 0 {
+		buf.WriteString(";5")
+	}
+	if c.Flags&FlagInverse != 0 {
+		buf.WriteString(";7")
+	}
+	if c.Flags&FlagInvisible != 0 {
+		buf.WriteString(";8")
+	}
+	if c.Flags&FlagStrike != 0 {
+		buf.WriteString(";9")
+	}
+	buf.WriteString("m")
 }
