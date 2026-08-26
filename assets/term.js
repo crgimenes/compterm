@@ -157,6 +157,18 @@ async function loadTheme() {
 }
 
 window.onload = async () => {
+  // The @font-face font loads lazily and window.onload does not wait for it.
+  // Opening the terminal first makes xterm measure the cell grid with the
+  // fallback font whenever the network is slower than page setup — the same
+  // session then renders with different metrics per origin (LAN vs proxied).
+  // Load the font explicitly before open(); on failure the fallback is at
+  // least consistent.
+  try {
+    await document.fonts.load(`${termOptions.fontSize}px terminal`);
+  } catch (e) {
+    // no Font Loading API or font fetch failure: proceed with the fallback
+  }
+
   const cfg = await loadTheme();
   // imageScale is a display setting, not an xterm theme field: pull it out
   // before merging the rest into the terminal theme.
