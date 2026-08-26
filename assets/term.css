@@ -1,4 +1,5 @@
-@import "xterm.css";
+/* xterm.css is linked from index.html so both stylesheets load in parallel;
+   importing it from here would chain the requests serially. */
 
 @font-face {
     font-family: terminal;

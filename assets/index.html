@@ -9,6 +9,10 @@
     <link rel="icon" type="image/png" sizes="16x16" href="favicon-16x16.png">
     <link rel="mask-icon" href="safari-pinned-tab.svg" color="#000000">
     <title>compterm</title>
+    <!-- preload: the font gates the first paint, so its download must start
+         with the page instead of after the stylesheets and script settle -->
+    <link rel="preload" href="3270NerdFontMono-Regular.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="stylesheet" href="xterm.css">
     <link rel="stylesheet" href="term.css">
     <meta name="viewport" content="width=device-width, initial-scale=1" />
 </head>

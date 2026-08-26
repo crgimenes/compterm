@@ -46,6 +46,34 @@ let terminal;
 // after it flows below the image instead of behind it.
 let reserveIIP = (b) => b;
 
+// Frames that arrive before the terminal exists: the websocket connects in
+// parallel with the font and theme loads, so the first RESIZE sizes the
+// terminal at creation (no visible relayout) and the snapshot is written the
+// moment it opens. Bounded: a snapshot is at most a few hundred KB.
+const pending = { size: null, writes: [], bytes: 0 };
+const pendingMax = 8 * 1024 * 1024;
+
+function applyMSG(payload) {
+  if (terminal) {
+    terminal.write(reserveIIP(payload));
+    return;
+  }
+  if (pending.bytes + payload.length > pendingMax) {
+    return;
+  }
+  pending.writes.push(payload.slice());
+  pending.bytes += payload.length;
+}
+
+function applyRESIZE(payload) {
+  const [rows, cols] = decoder.decode(payload).split(':');
+  if (terminal) {
+    terminal.resize(+cols, +rows);
+    return;
+  }
+  pending.size = { rows: +rows, cols: +cols };
+}
+
 const progress = '/-\\|';
 let progressIndex = 0;
 
@@ -99,7 +127,11 @@ function connectWS() {
   // synchronously, so frames apply strictly in arrival order.
   ws.binaryType = 'arraybuffer';
 
-  ws.onopen = () => terminal.reset();
+  ws.onopen = () => {
+    if (terminal) {
+      terminal.reset();
+    }
+  };
 
   ws.onmessage = ({ data }) => {
     let array = new Uint8Array(data);
@@ -113,13 +145,11 @@ function connectWS() {
             // multibyte glyph split across frames (common with image ANSI)
             // doesn't turn into replacement characters. reserveIIP inserts the
             // blank rows an inline image occupies before xterm parses them.
-            terminal.write(reserveIIP(payload));
+            applyMSG(payload);
             break;
-          case RESIZE: {
-            const [cols, rows] = decoder.decode(payload).split(':');
-            terminal.resize(+rows, +cols);
+          case RESIZE:
+            applyRESIZE(payload);
             break;
-          }
           default:
             console.log('unknown command', command);
         }
@@ -133,23 +163,23 @@ function connectWS() {
   ws.onerror = () => ws.close();
 
   ws.onclose = () => {
-    terminal.reset();
-    terminal.write(`\x1b[2J\x1b[0;0HConnection closed.\r\nReconnecting… ${progress[progressIndex]}\r\n`);
-    progressIndex = (progressIndex + 1) % progress.length;
-    document.title = 'compterm';
+    if (terminal) {
+      terminal.reset();
+      terminal.write(`\x1b[2J\x1b[0;0HConnection closed.\r\nReconnecting… ${progress[progressIndex]}\r\n`);
+      progressIndex = (progressIndex + 1) % progress.length;
+      document.title = 'compterm';
+    }
     setTimeout(connectWS, 1000);
   };
 
   // No terminal.onData handler: the viewer never sends input back to the host.
-  terminal.onTitleChange((title) => document.title = title);
-  terminal.onerror = (err) => console.log(err);
 }
 
 // loadTheme fetches an optional palette from the server so the viewer can match
 // the operator's terminal. Falls back to the built-in theme.
 async function loadTheme() {
   try {
-    const res = await fetch('theme.json', { cache: 'no-store' });
+    const res = await fetch('theme.json');
     if (res.ok) return await res.json();
   } catch (e) {
     // ignore: use the built-in theme
@@ -157,31 +187,53 @@ async function loadTheme() {
   return {};
 }
 
-window.onload = async () => {
-  // The @font-face font loads lazily and window.onload does not wait for it.
-  // Opening the terminal first makes xterm measure the cell grid with the
-  // fallback font whenever the network is slower than page setup — the same
-  // session then renders with different metrics per origin (LAN vs proxied).
-  // Load the font explicitly before open(); on failure the fallback is at
-  // least consistent.
+// The script tag sits after the stylesheets and the #terminal element, so the
+// DOM and the @font-face rule are ready at evaluation time: no need to wait
+// for window.onload (which would also wait for the icon fetches). The
+// websocket connects first — its snapshot buffers while font and theme load
+// in parallel.
+connectWS();
+
+(async () => {
+  const themeReady = loadTheme();
+
+  // The font must be loaded before open(): xterm measures the cell grid at
+  // that moment, and measuring with the fallback font makes the same session
+  // render with different metrics whenever the network is slower than page
+  // setup. On failure the fallback is at least consistent. The download
+  // itself started with the page (preload in index.html), so this usually
+  // resolves immediately.
   try {
     await document.fonts.load(`${termOptions.fontSize}px terminal`);
   } catch (e) {
     // no Font Loading API or font fetch failure: proceed with the fallback
   }
 
-  const cfg = await loadTheme();
-  // imageScale is a display setting, not an xterm theme field: pull it out
-  // before merging the rest into the terminal theme.
-  const imageScale = typeof cfg.imageScale === 'number' ? cfg.imageScale : undefined;
-  delete cfg.imageScale;
-  termOptions.theme = Object.assign({}, termOptions.theme, cfg);
+  // Born at the session's size when the snapshot won the race: the terminal
+  // never opens at the default size just to be resized in front of the user.
+  if (pending.size) {
+    termOptions.rows = pending.size.rows;
+    termOptions.cols = pending.size.cols;
+  }
 
   terminal = new Terminal(termOptions);
   terminal.loadAddon(new WebLinksAddon());
   terminal.open(document.getElementById('terminal'));
+  terminal.onTitleChange((title) => document.title = title);
+
+  for (const w of pending.writes) {
+    terminal.write(reserveIIP(w));
+  }
+  pending.writes.length = 0;
+  pending.bytes = 0;
+
+  // The theme stays off the critical path: colors apply at runtime when the
+  // fetch lands (the built-in palette shows meanwhile), and the inline-image
+  // pieces register here because they need imageScale from the same file.
+  const cfg = await themeReady;
+  const imageScale = typeof cfg.imageScale === 'number' ? cfg.imageScale : undefined;
+  delete cfg.imageScale;
+  terminal.options.theme = Object.assign({}, termOptions.theme, cfg);
   registerIIP(terminal, imageScale);
   reserveIIP = makeReserver(terminal, imageScale);
-
-  connectWS();
-};
+})();

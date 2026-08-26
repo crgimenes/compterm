@@ -194,14 +194,22 @@ func TestAssetsServed(t *testing.T) {
 			t.Errorf("GET %s status = %d, want 200", path, resp.StatusCode)
 		}
 
-		if path != "/term.css" {
-			continue
-		}
-		if strings.Contains(string(body), "unpkg") {
-			t.Errorf("term.css still references the unpkg CDN")
-		}
-		if !strings.Contains(string(body), `@import "xterm.css"`) {
-			t.Errorf("term.css does not import the vendored xterm.css")
+		switch path {
+		case "/term.css":
+			if strings.Contains(string(body), "unpkg") {
+				t.Errorf("term.css still references the unpkg CDN")
+			}
+			// an @import loads serially: xterm.css is linked from index.html
+			if strings.Contains(string(body), "@import") {
+				t.Errorf("term.css has an @import, which serializes the CSS loads")
+			}
+		case "/":
+			if !strings.Contains(string(body), `href="xterm.css"`) {
+				t.Errorf("index.html does not link the vendored xterm.css")
+			}
+			if !strings.Contains(string(body), `rel="preload"`) {
+				t.Errorf("index.html does not preload the terminal font")
+			}
 		}
 	}
 }
