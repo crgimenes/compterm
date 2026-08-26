@@ -63,6 +63,76 @@ func TestHistoryCap(t *testing.T) {
 	}
 }
 
+// TestRenderColorReset pins the SGR contract of snapshot rendering: a colored
+// line followed by a default-state line must emit a reset, or the color leaks
+// into the next line when the snapshot is replayed (seen as wrong colors on
+// browser reconnect after trailing-blank trimming removed the accidental
+// reset that padding cells used to provide).
+func TestRenderColorReset(t *testing.T) {
+	tr := New(10, 20)
+
+	_, err := tr.Write([]byte("\033[31mred\033[0m\r\nplain"))
+	if err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	s := string(tr.GetScreenAsAnsi())
+	i := strings.Index(s, "red")
+	j := strings.Index(s, "plain")
+	if i < 0 || j < 0 {
+		t.Fatalf("render is missing content: %q", s)
+	}
+	if !strings.Contains(s[i:j], "\033[0m") {
+		t.Errorf("no SGR reset between a colored line and a default one: %q", s)
+	}
+}
+
+// TestRenderFinalStateSync: the snapshot must leave the terminal in the
+// host's CURRENT SGR state, not in the last rendered cell's state, so live
+// output appended right after the snapshot keeps its colors.
+func TestRenderFinalStateSync(t *testing.T) {
+	tr := New(10, 20)
+
+	// last cell is red, but the live state was reset after it
+	_, err := tr.Write([]byte("\033[31mred\033[0m"))
+	if err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	s := string(tr.GetScreenAsAnsi())
+	tail := s[strings.Index(s, "red")+3:]
+	if !strings.Contains(tail, "\033[0m") {
+		t.Errorf("snapshot leaves the terminal colored while the host state is reset: %q", s)
+	}
+}
+
+// TestScrollRegionKeepsStatusLine emulates the tmux pattern: a scroll region
+// protecting a status line at the bottom. Scrolling inside the region must
+// not duplicate the protected line and must not push region lines into the
+// backlog — a real terminal discards them (seen as a duplicated tmux bar on
+// browser reconnect).
+func TestScrollRegionKeepsStatusLine(t *testing.T) {
+	tr := New(10, 20)
+
+	_, err := tr.Write([]byte("\033[10;1HSTATUS\033[1;9r\033[9;1Hone\r\ntwo\r\nthree"))
+	if err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	screen := string(tr.GetScreenAsAnsi())
+	if got := strings.Count(screen, "STATUS"); got != 1 {
+		t.Errorf("STATUS appears %d times on screen, want 1:\n%q", got, screen)
+	}
+	if !strings.Contains(screen, "three") {
+		t.Errorf("screen is missing the last region line: %q", screen)
+	}
+
+	hist := string(tr.GetHistoryAsAnsi())
+	if hist != "" {
+		t.Errorf("region scroll leaked lines into the backlog: %q", hist)
+	}
+}
+
 // TestHistoryAltScreen: with the alt screen active, the whole primary screen
 // is history — it is what was on display before the alt-screen app started.
 func TestHistoryAltScreen(t *testing.T) {

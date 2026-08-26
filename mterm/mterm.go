@@ -164,32 +164,26 @@ func (t *Terminal) nextLine() {
 	switch {
 	case s.cursor[0] < t.scrollRegion[1]-1:
 		return
-	case s.cursor[0] == t.scrollRegion[1] && t.scrollRegion[0] == 0:
+	case s.cursor[0] == t.scrollRegion[1] && t.scrollRegion[0] == 0 &&
+		t.scrollRegion[1] == rows && t.screenTarget == 0:
+		// Full-screen scroll on the primary screen: the top line enters the
+		// backlog — grow until the cap, then drop the oldest backlog line so
+		// history stays the most recent scrolled-off lines (it is what
+		// snapshots send as scrollback).
 		s.cursor[0]--
-		if t.screenTarget == 0 && len(s.cells)/cols < s.backlogSize {
-			t.screens[0].cells = append(t.screens[0].cells, make([]Cell, cols)...)
-			// TODO: should be:
-			// - insert a new line in offseted scrollRegion[1]
-			// - copy the rest
+		if len(s.cells)/cols < s.backlogSize {
+			s.cells = append(s.cells, make([]Cell, cols)...)
 			return
 		}
-		if t.screenTarget == 0 && t.scrollRegion[1] == rows {
-			// At the backlog cap, drop the oldest history line instead of the
-			// top screen line, so the backlog always holds the most recent
-			// scrolled-off lines (it is what snapshots send as scrollback).
-			copy(s.cells, s.cells[cols:])
-			fill(s.cells[len(s.cells)-cols:], Cell{})
-			return
-		}
-		region := t.screenScrollRegion()
-		copy(region, region[cols:])
-		fill(region[len(region)-cols:], Cell{})
+		copy(s.cells, s.cells[cols:])
+		fill(s.cells[len(s.cells)-cols:], Cell{})
 	case s.cursor[0] == t.scrollRegion[1]:
+		// Scroll confined to a region (or on the alt screen): the line
+		// leaving the region top is discarded exactly like a real terminal —
+		// it never enters the scrollback, and rows below the region (e.g. a
+		// tmux status line) are never touched.
 		s.cursor[0]--
 		region := t.screenScrollRegion()
-		if len(region)/cols < s.backlogSize {
-			region = append(region, make([]Cell, cols)...)
-		}
 		copy(region, region[cols:])
 		fill(region[len(region)-cols:], Cell{})
 
@@ -639,7 +633,12 @@ func (t *Terminal) getScreenAsAnsi() []byte {
 	s := t.screens[t.screenTarget]
 
 	buf := bytes.NewBuffer(nil)
-	renderCells(buf, t.screenView(), s.size[1])
+	final := renderCells(buf, t.screenView(), s.size[1])
+	// Leave the terminal in the host's live SGR state, not in the last
+	// rendered cell's: output appended right after the snapshot assumes it.
+	if final != t.cstate {
+		emitSGR(buf, Cell{SGRState: t.cstate})
+	}
 	return buf.Bytes()
 }
 
@@ -674,13 +673,18 @@ func (t *Terminal) GetHistoryAsAnsi() []byte {
 // renderCells renders a row-aligned cell slice as ANSI with \r\n between
 // rows, re-emitting SGR state only when it changes.
 // renderCells renders a row-aligned cell slice as ANSI, one row per line with
-// \r\n between rows, re-emitting SGR state only when it changes. Trailing
+// \r\n between rows, re-emitting SGR state only when it changes. The state is
+// tracked across the whole render, never reset per row: SGR persists across
+// line breaks in a real terminal, so a per-row reset of the tracker alone
+// would leak the previous line's colors into a default-state line. Trailing
 // cells that carry nothing (default state, blank char) are trimmed: the
 // output is printed sequentially, so padding would only waste bytes and
-// pollute copied lines with trailing spaces.
-func renderCells(buf *bytes.Buffer, screen []Cell, cols int) {
+// pollute copied lines with trailing spaces. Returns the state the terminal
+// is left in.
+func renderCells(buf *bytes.Buffer, screen []Cell, cols int) SGRState {
+	lastState := SGRState{}
 	if cols <= 0 {
-		return
+		return lastState
 	}
 	for start := 0; start < len(screen); start += cols {
 		if start > 0 {
@@ -693,7 +697,6 @@ func renderCells(buf *bytes.Buffer, screen []Cell, cols int) {
 			end--
 		}
 
-		lastState := SGRState{}
 		for _, c := range row[:end] {
 			if c.SGRState != lastState {
 				lastState = c.SGRState
@@ -702,6 +705,7 @@ func renderCells(buf *bytes.Buffer, screen []Cell, cols int) {
 			buf.WriteRune(max(c.Char, ' '))
 		}
 	}
+	return lastState
 }
 
 func isBlankCell(c Cell) bool {
