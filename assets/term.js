@@ -77,6 +77,9 @@ function applyRESIZE(payload) {
 const progress = '/-\\|';
 let progressIndex = 0;
 
+// Grows while reconnects keep failing, reset by a successful open.
+let retryDelay = 1000;
+
 // fnv1a computes the FNV-1a 32-bit hash, matching the Go protocol package.
 function fnv1a(bytes) {
   let hash = 0x811c9dc5;
@@ -127,7 +130,22 @@ function connectWS() {
   // synchronously, so frames apply strictly in arrival order.
   ws.binaryType = 'arraybuffer';
 
+  // A handshake that never answers must not be left pending. Safari keeps such
+  // a socket in CONNECTING forever — no open, no error, no close — and each one
+  // holds a per-host connection slot in its network process. Once the slots run
+  // out every later WebSocket to that host hangs the same silent way, for every
+  // page and window, until Safari itself is restarted; clearing caches and
+  // website data does not help, because none of it is on disk. Closing the
+  // attempt fires onclose, which schedules the retry.
+  const handshakeTimeout = setTimeout(() => {
+    if (ws.readyState === WebSocket.CONNECTING) {
+      ws.close();
+    }
+  }, 10000);
+
   ws.onopen = () => {
+    clearTimeout(handshakeTimeout);
+    retryDelay = 1000;
     if (terminal) {
       terminal.reset();
     }
@@ -163,13 +181,17 @@ function connectWS() {
   ws.onerror = () => ws.close();
 
   ws.onclose = () => {
+    clearTimeout(handshakeTimeout);
     if (terminal) {
       terminal.reset();
       terminal.write(`\x1b[2J\x1b[0;0HConnection closed.\r\nReconnecting… ${progress[progressIndex]}\r\n`);
       progressIndex = (progressIndex + 1) % progress.length;
       document.title = 'compterm';
     }
-    setTimeout(connectWS, 1000);
+    // Back off while the host stays down: retrying once a second for an hour
+    // buries the browser in dead sockets, and the operator is usually away.
+    setTimeout(connectWS, retryDelay);
+    retryDelay = Math.min(retryDelay * 2, 15000);
   };
 
   // No terminal.onData handler: the viewer never sends input back to the host.
@@ -187,27 +209,52 @@ async function loadTheme() {
   return {};
 }
 
+// reMeasureOnFont fixes the cell size once the real font is available. xterm
+// measures a cell at open(), which by design happens before the font arrives,
+// so glyphs would otherwise sit in cells sized for the fallback. Reassigning
+// fontFamily is the public way to make xterm measure again; the appended
+// fallback leaves the effective font identical while making the value differ,
+// since an option set to its current value fires no change. Safari loads the
+// font only once rendered text uses it, which is why this listens for the
+// event instead of awaiting the load.
+function reMeasureOnFont() {
+  const fonts = document.fonts;
+  if (!fonts) {
+    return;
+  }
+
+  const applied = `${termOptions.fontFamily}, monospace`;
+  const remeasure = () => {
+    if (terminal && terminal.options.fontFamily !== applied) {
+      terminal.options.fontFamily = applied;
+    }
+  };
+
+  fonts.addEventListener('loadingdone', remeasure);
+  fonts.load(`${termOptions.fontSize}px terminal`).then(remeasure, remeasure);
+}
+
 // The script tag sits after the stylesheets and the #terminal element, so the
 // DOM and the @font-face rule are ready at evaluation time: no need to wait
 // for window.onload (which would also wait for the icon fetches). The
-// websocket connects first — its snapshot buffers while font and theme load
-// in parallel.
+// websocket connects first, so frames that arrive while the terminal is built
+// buffer instead of being dropped; font and theme load alongside without
+// holding it back.
 connectWS();
 
 (async () => {
   const themeReady = loadTheme();
 
-  // The font must be loaded before open(): xterm measures the cell grid at
-  // that moment, and measuring with the fallback font makes the same session
-  // render with different metrics whenever the network is slower than page
-  // setup. On failure the fallback is at least consistent. The download
-  // itself started with the page (preload in index.html), so this usually
-  // resolves immediately.
-  try {
-    await document.fonts.load(`${termOptions.fontSize}px terminal`);
-  } catch (e) {
-    // no Font Loading API or font fetch failure: proceed with the fallback
-  }
+  // The font never gates the terminal. Rows and columns come from the host,
+  // not from measuring: the snapshot carries them as ANSI and RESIZE frames
+  // keep them current, so the grid is right even when the glyphs are still the
+  // fallback. Waiting here used to hide the whole UI behind one promise that
+  // can simply never settle — Safari does not resolve fonts.load() while no
+  // rendered text uses the family, and #terminal is empty at this point, so a
+  // cold font cache left a blank page with no error at all.
+  //
+  // Only the cell size depends on the font, and that is repaired below.
+  reMeasureOnFont();
 
   // Born at the session's size when the snapshot won the race: the terminal
   // never opens at the default size just to be resized in front of the user.
