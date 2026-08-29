@@ -136,6 +136,56 @@ func TestSnapshotRestoresTmuxModes(t *testing.T) {
 	}
 }
 
+// TestLeavingAltScreenRepaintsPrimary verifies that when the host leaves the
+// alternate screen the broadcast stream carries a repaint of the primary
+// screen. The host terminal restores that content from local memory, so
+// without the repaint a viewer that cannot nest the buffer switch is left
+// with a blank screen.
+func TestLeavingAltScreenRepaintsPrimary(t *testing.T) {
+	s := New(5, 20)
+	c := bareClient()
+	s.AttachClient(c)
+
+	// discard the attach snapshot (same composition updateToCurrentState uses)
+	rows, columns := s.size()
+	crows, ccolumns := s.CursorPos()
+	pre := fmt.Appendf(nil, "\033[8;%d;%dt\033[0;0H", rows, columns)
+	pre = append(pre, s.GetHistoryAsANSI()...)
+	pre = append(pre, s.GetScreenAsANSI()...)
+	pre = append(pre, s.mt.GetModesAsAnsi()...)
+	pre = fmt.Appendf(pre, "\033[%d;%dH", crows+1, ccolumns+1)
+	_ = drainPayloads(t, c, len(pre))
+
+	writes := []string{
+		"hello-main\r\n",
+		"\033[?1049hvi-screen",
+		"\033[?1049l",
+	}
+	var raw []byte
+	for _, w := range writes {
+		if _, err := s.Write([]byte(w)); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+		raw = append(raw, w...)
+	}
+
+	crows, ccolumns = s.CursorPos()
+	want := raw
+	want = append(want, "\033[0;0H"...)
+	want = append(want, s.GetScreenAsANSI()...)
+	want = append(want, s.mt.GetModesAsAnsi()...)
+	want = fmt.Appendf(want, "\033[%d;%dH", crows+1, ccolumns+1)
+
+	got := drainPayloads(t, c, len(want))
+	if !bytes.Equal(got, want) {
+		t.Fatalf("stream after leaving alt screen:\ngot  %q\nwant %q", got, want)
+	}
+	leave := bytes.Index(got, []byte("\033[?1049l"))
+	if !bytes.Contains(got[leave:], []byte("hello-main")) {
+		t.Errorf("no primary-screen repaint after the alt screen exit: %q", got[leave:])
+	}
+}
+
 // TestSendSnapshotChunks verifies that a snapshot larger than one frame is
 // split across frames without ever cutting a multibyte rune.
 func TestSendSnapshotChunks(t *testing.T) {

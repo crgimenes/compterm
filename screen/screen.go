@@ -168,10 +168,30 @@ func (s *Screen) Write(p []byte) (n int, err error) {
 	s.writeMu.Lock()
 	s.clipBuf = s.clip.filter(s.clipBuf[:0], p)
 	s.sgrBuf = s.sgr.filter(s.sgrBuf[:0], s.clipBuf)
+	wasAlt := s.mt.AltScreenActive()
 	_, _ = s.mt.Write(s.sgrBuf)
 	_, _ = s.Stream.Write(s.sgrBuf)
+	if wasAlt && !s.mt.AltScreenActive() {
+		s.appendPrimaryRepaintLocked()
+	}
 	s.writeMu.Unlock()
 	return len(p), nil
+}
+
+// appendPrimaryRepaintLocked replays the primary screen into the stream right
+// after the host leaves the alternate screen. The host terminal restores its
+// primary buffer from local memory, so those bytes never cross the wire; a
+// viewer that cannot nest the switch (one already sitting on its own alternate
+// screen, like msh's live app) would otherwise be left with a blank screen.
+// A plain viewer just redraws what its own 1049l restored. Called with
+// writeMu held, after the emulator has consumed the whole chunk, so the
+// repaint reflects any output that followed the switch.
+func (s *Screen) appendPrimaryRepaintLocked() {
+	crows, ccolumns := s.CursorPos()
+	m := append([]byte("\033[0;0H"), s.GetScreenAsANSI()...)
+	m = append(m, s.mt.GetModesAsAnsi()...)
+	m = fmt.Appendf(m, "\033[%d;%dH", crows+1, ccolumns+1)
+	_, _ = s.Stream.Write(m)
 }
 
 func (s *Screen) updateToCurrentState(c *Client) {
