@@ -137,3 +137,21 @@ func TestValidate(t *testing.T) {
 		})
 	}
 }
+
+func TestOriginPatterns(t *testing.T) {
+	c := &Config{}
+	if got := c.OriginPatterns(); got != nil {
+		t.Fatalf("empty AllowedOrigins: want nil, got %v", got)
+	}
+	c.AllowedOrigins = "crg.eti.br, localhost:1313 ,,*.example.com"
+	got := c.OriginPatterns()
+	want := []string{"crg.eti.br", "localhost:1313", "*.example.com"}
+	if len(got) != len(want) {
+		t.Fatalf("want %v, got %v", want, got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("want %v, got %v", want, got)
+		}
+	}
+}

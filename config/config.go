@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"unicode"
 
 	"github.com/crgimenes/filo"
@@ -21,10 +22,15 @@ type Config struct {
 	Listen      string
 	Command     string
 	AuthToken   string
-	Term        string
-	ColorTerm   string
-	Path        string
-	InitFile    string
+	// AllowedOrigins is a comma-separated list of origin host patterns
+	// allowed to open the viewer websocket from another origin (e.g.
+	// "crg.eti.br,localhost:1313"; filepath.Match wildcards work). Empty
+	// keeps the library default: same-origin only.
+	AllowedOrigins string
+	Term           string
+	ColorTerm      string
+	Path           string
+	InitFile       string
 }
 
 var CFG = &Config{}
@@ -58,6 +64,8 @@ const defaultInitFilo = `;; init.filo — compterm configuration
 ;;
 ;; (set Listen "0.0.0.0:2200") ; web/websocket listen address
 ;; (set AuthToken "")          ; viewer access token (empty disables auth)
+;; (set AllowedOrigins "")     ; cross-origin viewer hosts, comma-separated
+;;                             ; (e.g. "crg.eti.br"; empty = same-origin only)
 ;; (set Command "/bin/zsh")    ; command to share (defaults to $SHELL)
 ;; (set Term "xterm-256color") ; TERM for the shared command (empty = inherit)
 ;; (set ColorTerm "truecolor") ; COLORTERM (empty disables 24-bit color)
@@ -99,6 +107,7 @@ func applyDefaultsAndEnv(c *Config) error {
 
 	c.Listen = envOr("COMPTERM_LISTEN", defaultListen)
 	c.AuthToken = os.Getenv("COMPTERM_AUTH_TOKEN")
+	c.AllowedOrigins = os.Getenv("COMPTERM_ALLOWED_ORIGINS")
 	c.Command = envOr("COMPTERM_COMMAND", os.Getenv("SHELL"))
 	c.Term = envOr("COMPTERM_TERM", defaultTerm)
 	c.ColorTerm = envOr("COMPTERM_COLORTERM", defaultColorTerm)
@@ -112,6 +121,7 @@ func applyDefaultsAndEnv(c *Config) error {
 func parseFlags(c *Config) {
 	flag.StringVar(&c.Listen, "listen", c.Listen, "web/websocket listen address")
 	flag.StringVar(&c.AuthToken, "auth_token", c.AuthToken, "viewer access token (empty disables authentication)")
+	flag.StringVar(&c.AllowedOrigins, "allowed_origins", c.AllowedOrigins, "comma-separated cross-origin viewer hosts (empty = same-origin only)")
 	flag.StringVar(&c.Command, "command", c.Command, "command to share (defaults to $SHELL)")
 	flag.StringVar(&c.Term, "term", c.Term, "TERM for the shared command (empty inherits the host's)")
 	flag.StringVar(&c.ColorTerm, "colorterm", c.ColorTerm, "COLORTERM for the shared command (empty disables truecolor)")
@@ -158,6 +168,7 @@ func loadFilo(c *Config) error {
 
 	f.SetGlobal("Listen", c.Listen)
 	f.SetGlobal("AuthToken", c.AuthToken)
+	f.SetGlobal("AllowedOrigins", c.AllowedOrigins)
 	f.SetGlobal("Command", c.Command)
 	f.SetGlobal("Term", c.Term)
 	f.SetGlobal("ColorTerm", c.ColorTerm)
@@ -179,6 +190,7 @@ func loadFilo(c *Config) error {
 
 	c.Listen = filoString(f, "Listen", c.Listen)
 	c.AuthToken = filoString(f, "AuthToken", c.AuthToken)
+	c.AllowedOrigins = filoString(f, "AllowedOrigins", c.AllowedOrigins)
 	c.Command = filoString(f, "Command", c.Command)
 	c.Term = filoString(f, "Term", c.Term)
 	c.ColorTerm = filoString(f, "ColorTerm", c.ColorTerm)
@@ -313,4 +325,16 @@ func usage(w io.Writer) {
 	p("    Created with a documented default on first run.\n")
 	p("\nExample:\n")
 	p("    compterm -auth_token secret -command /bin/zsh\n")
+}
+
+// OriginPatterns returns AllowedOrigins as a pattern slice, nil when unset.
+func (c *Config) OriginPatterns() []string {
+	var out []string
+	for p := range strings.SplitSeq(c.AllowedOrigins, ",") {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }

@@ -343,7 +343,14 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	c, err := websocket.Accept(w, r, nil)
+	// nil options keep the library default of same-origin only; AllowedOrigins
+	// opts in specific cross-origin viewers (e.g. the crg.eti.br BBS).
+	var acceptOpts *websocket.AcceptOptions
+	if patterns := config.CFG.OriginPatterns(); len(patterns) > 0 {
+		acceptOpts = &websocket.AcceptOptions{OriginPatterns: patterns}
+	}
+
+	c, err := websocket.Accept(w, r, acceptOpts)
 	if err != nil {
 		log.Println(err)
 		return
