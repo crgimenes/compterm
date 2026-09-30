@@ -160,6 +160,7 @@ func TestRuneWidth(t *testing.T) {
 		want int
 	}{
 		{'a', 1}, {'時', 2}, {'の', 2}, {'█', 1}, {0x0301, 0}, {'😀', 2}, {'가', 2},
+		{'✅', 2}, {'⌚', 2}, {'⭐', 2}, {0x1F004, 2}, {0x1F7E0, 2}, {'✓', 1},
 	}
 	for _, tt := range tests {
 		if got := runeWidth(tt.r); got != tt.want {
