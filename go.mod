@@ -5,7 +5,7 @@ go 1.27.4
 require (
 	github.com/coder/websocket v1.8.15
 	github.com/creack/pty v1.1.24
-	github.com/crgimenes/filo v0.1.3
+	github.com/crgimenes/filo v0.1.4
 	golang.org/x/term v0.48.0
 )
 
