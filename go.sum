@@ -2,8 +2,8 @@ github.com/coder/websocket v1.8.15 h1:6B2JPeOGlpff2Uz6vOEH1Vzpi0iUz20A+lPVhPHtNU
 github.com/coder/websocket v1.8.15/go.mod h1:NX3SzP+inril6yawo5CQXx8+fk145lPDC6pumgx0mVg=
 github.com/creack/pty v1.1.24 h1:bJrF4RRfyJnbTJqzRLHzcGaZK1NeM5kTC9jGgovnR1s=
 github.com/creack/pty v1.1.24/go.mod h1:08sCNb52WyoAwi2QDyzUCTgcvVFhUzewun7wtTfvcwE=
-github.com/crgimenes/filo v0.1.4 h1:/v+6qTs3i48z5sQWAdvVvJWdQQTb3NwVWMNIX9ther8=
-github.com/crgimenes/filo v0.1.4/go.mod h1:at6YbdrYygETZYeRNlqb5MwDHudvAnCHRIlMnfhaM14=
+github.com/crgimenes/filo v0.1.5 h1:4QvSVV2Ga5SESoL/7drQsb2pPK2Pwwgt8ZCvlS1QxZ0=
+github.com/crgimenes/filo v0.1.5/go.mod h1:at6YbdrYygETZYeRNlqb5MwDHudvAnCHRIlMnfhaM14=
 golang.org/x/sys v0.50.0 h1:dkKZEFTEKaLr1sjhs0WiKqoi8Jj5nHbS3Njmx1UoMJs=
 golang.org/x/sys v0.50.0/go.mod h1:hNLxWAXmnKAxqDtdwIYC4bM9oQPEecfsnNMuSxOs3og=
 golang.org/x/term v0.48.0 h1:G6UU1eiSB8nl3DzeUGt7Mg+2SctI8tPS6Z5/mBt6cOk=
