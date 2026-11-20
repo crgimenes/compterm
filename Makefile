@@ -5,13 +5,13 @@ LDFLAGS = -X 'main.Version=$(VERSION)' -w -s
 export CGO_ENABLED=0
 
 all: js
-	go build -trimpath -o $(BINARY_NAME) -ldflags "$(LDFLAGS)" .
+	go build -trimpath -o $(BINARY_NAME) -ldflags "$(LDFLAGS)" ./cmd/compterm
 
 dev-race: js-dev
-	go run -race -tags dev .
+	go run -race -tags dev ./cmd/compterm
 
 dev: js-dev
-	go run -tags dev .
+	go run -tags dev ./cmd/compterm
 
 # Reinstall whenever package.json changes, so a dependency bump (e.g. a new
 # xterm version) actually reaches the bundle instead of using stale node_modules.
@@ -36,10 +36,10 @@ js-clean:
 # target: creack/pty and SIGWINCH are Unix-only.
 dist: js
 	mkdir -p $(DIST_DIR)
-	GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags "$(LDFLAGS)" -o $(DIST_DIR)/$(BINARY_NAME)-darwin-arm64 .
-	GOOS=darwin GOARCH=amd64 go build -trimpath -ldflags "$(LDFLAGS)" -o $(DIST_DIR)/$(BINARY_NAME)-darwin-amd64 .
-	GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "$(LDFLAGS)" -o $(DIST_DIR)/$(BINARY_NAME)-linux-amd64 .
-	GOOS=linux GOARCH=arm64 go build -trimpath -ldflags "$(LDFLAGS)" -o $(DIST_DIR)/$(BINARY_NAME)-linux-arm64 .
+	GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags "$(LDFLAGS)" -o $(DIST_DIR)/$(BINARY_NAME)-darwin-arm64 ./cmd/compterm
+	GOOS=darwin GOARCH=amd64 go build -trimpath -ldflags "$(LDFLAGS)" -o $(DIST_DIR)/$(BINARY_NAME)-darwin-amd64 ./cmd/compterm
+	GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "$(LDFLAGS)" -o $(DIST_DIR)/$(BINARY_NAME)-linux-amd64 ./cmd/compterm
+	GOOS=linux GOARCH=arm64 go build -trimpath -ldflags "$(LDFLAGS)" -o $(DIST_DIR)/$(BINARY_NAME)-linux-arm64 ./cmd/compterm
 	gzip -f $(DIST_DIR)/$(BINARY_NAME)-linux-amd64 $(DIST_DIR)/$(BINARY_NAME)-linux-arm64
 
 # Static-analysis and test gate (the house QA flow).
